@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Natural Puff - Direct Razorpay Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background-color: #f5f5f5;
+    }
+    .container {
+      max-width: 500px;
+      width: 100%;
+      padding: 30px;
+      background-color: white;
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      text-align: center;
+    }
+    h1 {
+      color: #167152;
+      margin-top: 0;
+    }
+    button {
+      background-color: #167152;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-top: 20px;
+    }
+    button:hover {
+      background-color: #0e5038;
+    }
+    .log {
+      margin-top: 20px;
+      padding: 10px;
+      background-color: #f8f8f8;
+      border-radius: 4px;
+      text-align: left;
+      height: 200px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Direct Razorpay Test</h1>
+    <p>This page tests Razorpay directly with no dependencies.</p>
+    
+    <button id="payButton">Open Razorpay (₹1)</button>
+    
+    <div class="log" id="log"></div>
+  </div>
+
+  <script>
+    // Logging function
+    function log(message) {
+      console.log(message);
+      const logElement = document.getElementById('log');
+      logElement.innerHTML += `<div>${message}</div>`;
+      logElement.scrollTop = logElement.scrollHeight;
+    }
+
+    // Load Razorpay script
+    function loadRazorpayScript() {
+      return new Promise((resolve, reject) => {
+        log('Loading Razorpay script...');
+        
+        if (window.Razorpay) {
+          log('Razorpay already loaded');
+          resolve();
+          return;
+        }
+        
+        const script = document.createElement('script');
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.async = true;
+        
+        script.onload = () => {
+          log('Razorpay script loaded successfully');
+          resolve();
+        };
+        
+        script.onerror = () => {
+          const error = 'Failed to load Razorpay script';
+          log(error);
+          reject(new Error(error));
+        };
+        
+        document.body.appendChild(script);
+      });
+    }
+
+    // Open Razorpay checkout
+    function openRazorpay() {
+      log('Creating Razorpay options...');
+      
+      const options = {
+        key: 'rzp_test_qJB7Gu8slTfsRH', // Replace with your key
+        amount: 100, // ₹1 in paise
+        currency: 'INR',
+        name: 'Natural Puff',
+        description: 'Test Payment',
+        image: '',
+        handler: function(response) {
+          log(`Payment successful! Payment ID: ${response.razorpay_payment_id}`);
+          log('Full response: ' + JSON.stringify(response));
+        },
+        prefill: {
+          name: 'Test User',
+          email: 'test@example.com',
+          contact: '9999999999'
+        },
+        notes: {
+          address: 'Test Address'
+        },
+        theme: {
+          color: '#167152'
+        }
+      };
+      
+      log('Creating Razorpay instance...');
+      const razorpay = new window.Razorpay(options);
+      
+      razorpay.on('payment.failed', function(response) {
+        log(`Payment failed: ${response.error.description}`);
+        log('Error details: ' + JSON.stringify(response.error));
+      });
+      
+      log('Opening Razorpay checkout...');
+      razorpay.open();
+    }
+
+    // Handle button click
+    document.getElementById('payButton').addEventListener('click', async () => {
+      try {
+        await loadRazorpayScript();
+        openRazorpay();
+      } catch (error) {
+        log(`Error: ${error.message}`);
+      }
+    });
+    
+    // Initial log
+    log('Page loaded. Click the button to test Razorpay.');
+  </script>
+</body>
+</html>

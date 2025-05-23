@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Direct Razorpay Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 600px;
+      width: 100%;
+      padding: 20px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+    h1 {
+      text-align: center;
+      color: #167152;
+    }
+    button {
+      background-color: #167152;
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      font-size: 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-top: 20px;
+      width: 100%;
+    }
+    button:hover {
+      background-color: #0e5038;
+    }
+    #status {
+      margin-top: 20px;
+      padding: 10px;
+      border-radius: 4px;
+    }
+    .success {
+      background-color: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    .error {
+      background-color: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    .info {
+      background-color: #e2f3ff;
+      color: #0c5460;
+      border: 1px solid #bee5eb;
+    }
+    pre {
+      background: #f8f8f8;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 10px;
+      max-height: 300px;
+      overflow: auto;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Direct Razorpay Test</h1>
+    <p>This page will test the Razorpay integration directly, bypassing the React components.</p>
+    
+    <div id="status" class="info">Ready to test Razorpay integration...</div>
+    
+    <button id="payButton">Test Razorpay Payment</button>
+    
+    <div id="log"></div>
+  </div>
+
+  <script>
+    const logElement = document.getElementById('log');
+    const statusElement = document.getElementById('status');
+    const payButton = document.getElementById('payButton');
+    
+    // Logger function
+    function log(message, type = 'info') {
+      console.log(message);
+      const entry = document.createElement('pre');
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      logElement.prepend(entry);
+      
+      statusElement.className = type;
+      statusElement.textContent = message;
+    }
+    
+    // Step 1: Load Razorpay script
+    function loadRazorpayScript() {
+      log('Loading Razorpay script...');
+      
+      return new Promise((resolve, reject) => {
+        if (window.Razorpay) {
+          log('Razorpay already loaded');
+          resolve(true);
+          return;
+        }
+        
+        const script = document.createElement('script');
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.async = true;
+        
+        script.onload = () => {
+          log('Razorpay script loaded successfully');
+          resolve(true);
+        };
+        
+        script.onerror = () => {
+          log('Failed to load Razorpay script', 'error');
+          reject(new Error('Failed to load Razorpay script'));
+        };
+        
+        document.body.appendChild(script);
+      });
+    }
+    
+    // Step 2: Create Razorpay order
+    async function createRazorpayOrder() {
+      log('Creating Razorpay order...');
+      
+      try {
+        // Create a test order with a fixed amount
+        const amount = 100; // ₹1 (in paise)
+        const orderData = {
+          amount: amount,
+          currency: 'INR',
+          receipt: `direct_test_${Date.now()}`,
+          notes: { test: 'Direct HTML Test' }
+        };
+        
+        // Use the public URL for the edge function
+        const response = await fetch('/api/createRazorpayOrder', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(orderData)
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Failed to create order: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (!data || !data.data || !data.data.id) {
+          throw new Error('Invalid response from order creation API');
+        }
+        
+        log(`Order created successfully: ${data.data.id}`);
+        return data.data;
+      } catch (error) {
+        log(`Error creating order: ${error.message}`, 'error');
+        throw error;
+      }
+    }
+    
+    // Step 3: Open Razorpay checkout
+    function openRazorpayCheckout(order) {
+      log('Opening Razorpay checkout...');
+      
+      return new Promise((resolve, reject) => {
+        try {
+          // Hardcoded key for testing - this should be replaced with an environment variable
+          const options = {
+            key: 'rzp_test_qJB7Gu8slTfsRH',
+            amount: order.amount,
+            currency: order.currency,
+            name: 'Natural Puff Test',
+            description: 'Direct Payment Test',
+            order_id: order.id,
+            prefill: {
+              name: 'Test User',
+              email: 'test@example.com',
+              contact: '9999999999'
+            },
+            theme: {
+              color: '#167152'
+            },
+            handler: function(response) {
+              log(`Payment successful! Payment ID: ${response.razorpay_payment_id}`, 'success');
+              resolve(response);
+            },
+            modal: {
+              ondismiss: function() {
+                log('Checkout form closed by user', 'error');
+                reject(new Error('Payment cancelled by user'));
+              }
+            }
+          };
+          
+          log('Creating Razorpay instance with options', 'info');
+          console.log('Options:', options);
+          
+          const razorpayInstance = new window.Razorpay(options);
+          
+          // Add additional error handler
+          razorpayInstance.on('payment.failed', function(response) {
+            log(`Payment failed: ${response.error.description}`, 'error');
+            reject(new Error(`Payment failed: ${response.error.description}`));
+          });
+          
+          // Open checkout after a short delay
+          setTimeout(() => {
+            log('Opening checkout window now...');
+            razorpayInstance.open();
+            log('Checkout window opened');
+          }, 1000);
+        } catch (error) {
+          log(`Error opening checkout: ${error.message}`, 'error');
+          reject(error);
+        }
+      });
+    }
+    
+    // Main function to handle payment flow
+    async function handlePaymentFlow() {
+      payButton.disabled = true;
+      
+      try {
+        // Step 1: Load the script
+        await loadRazorpayScript();
+        
+        // Check if Razorpay is available
+        if (!window.Razorpay) {
+          throw new Error('Razorpay failed to initialize properly');
+        }
+        
+        // Step 2: Create an order
+        const order = await createRazorpayOrder();
+        
+        // Step 3: Open the checkout
+        await openRazorpayCheckout(order);
+      } catch (error) {
+        log(`Payment flow error: ${error.message}`, 'error');
+      } finally {
+        payButton.disabled = false;
+      }
+    }
+    
+    // Attach event listener to button
+    payButton.addEventListener('click', handlePaymentFlow);
+    
+    // Initialize
+    log('Page loaded. Click the button to test Razorpay.');
+  </script>
+</body>
+</html>

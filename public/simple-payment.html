@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Natural Puff - Simple Payment</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f5f5f5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 500px;
+      width: 100%;
+      background-color: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      padding: 30px;
+    }
+    h1 {
+      color: #167152;
+      text-align: center;
+      margin-top: 0;
+    }
+    .btn {
+      background-color: #167152;
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      display: block;
+      width: 100%;
+      margin-top: 20px;
+    }
+    .btn:hover {
+      background-color: #0e5038;
+    }
+    .order-info {
+      background-color: #f9f9f9;
+      padding: 15px;
+      border-radius: 4px;
+      margin-top: 20px;
+    }
+    .order-info p {
+      margin: 5px 0;
+    }
+    .status {
+      margin-top: 20px;
+      padding: 10px;
+      border-radius: 4px;
+      text-align: center;
+    }
+    .loading {
+      display: none;
+      background-color: #e2f3ff;
+      color: #0c5460;
+    }
+    .error {
+      display: none;
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Complete Your Payment</h1>
+    
+    <div class="order-info">
+      <p><strong>Order ID:</strong> <span id="orderId">Loading...</span></p>
+      <p><strong>Amount:</strong> ₹<span id="amount">1.00</span></p>
+    </div>
+    
+    <button id="payButton" class="btn">Pay Now</button>
+    
+    <div id="loadingStatus" class="status loading">
+      Processing your payment...
+    </div>
+    
+    <div id="errorStatus" class="status error">
+      There was an error processing your payment. Please try again.
+    </div>
+  </div>
+
+  <script>
+    // Get order ID from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const orderId = urlParams.get('orderId') || 'TEST-' + Math.floor(Math.random() * 1000000);
+    const amount = urlParams.get('amount') || 1.00;
+    
+    // Display order info
+    document.getElementById('orderId').textContent = orderId;
+    document.getElementById('amount').textContent = amount;
+    
+    // Load Razorpay script
+    function loadRazorpayScript() {
+      return new Promise((resolve, reject) => {
+        if (window.Razorpay) {
+          resolve();
+          return;
+        }
+        
+        const script = document.createElement('script');
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.async = true;
+        
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error('Failed to load Razorpay script'));
+        
+        document.body.appendChild(script);
+      });
+    }
+    
+    // Handle payment
+    async function handlePayment() {
+      // Show loading
+      document.getElementById('loadingStatus').style.display = 'block';
+      document.getElementById('errorStatus').style.display = 'none';
+      document.getElementById('payButton').disabled = true;
+      
+      try {
+        // Load Razorpay script
+        await loadRazorpayScript();
+        
+        // Create Razorpay options
+        const options = {
+          key: 'rzp_test_qJB7Gu8slTfsRH', // Replace with your key
+          amount: Math.round(parseFloat(amount) * 100), // Amount in paise
+          currency: 'INR',
+          name: 'Natural Puff',
+          description: `Payment for Order #${orderId}`,
+          handler: function(response) {
+            // Payment successful
+            console.log('Payment successful:', response);
+            
+            // Redirect to success page
+            window.location.href = `/order-success?id=${orderId}`;
+          },
+          prefill: {
+            name: 'Customer',
+            email: 'customer@example.com',
+            contact: '9999999999'
+          },
+          notes: {
+            order_id: orderId
+          },
+          theme: {
+            color: '#167152'
+          },
+          modal: {
+            ondismiss: function() {
+              console.log('Payment window closed');
+              document.getElementById('loadingStatus').style.display = 'none';
+              document.getElementById('payButton').disabled = false;
+              
+              // Redirect to failed payment page
+              window.location.href = `/order-success?id=${orderId}&payment=failed`;
+            }
+          }
+        };
+        
+        // Create Razorpay instance and open checkout
+        const razorpay = new window.Razorpay(options);
+        
+        // Handle payment failure
+        razorpay.on('payment.failed', function(response) {
+          console.error('Payment failed:', response.error);
+          document.getElementById('loadingStatus').style.display = 'none';
+          document.getElementById('errorStatus').style.display = 'block';
+          document.getElementById('payButton').disabled = false;
+          
+          // Redirect to failed payment page after a short delay
+          setTimeout(() => {
+            window.location.href = `/order-success?id=${orderId}&payment=failed`;
+          }, 2000);
+        });
+        
+        // Open Razorpay checkout
+        razorpay.open();
+      } catch (error) {
+        console.error('Error:', error);
+        document.getElementById('loadingStatus').style.display = 'none';
+        document.getElementById('errorStatus').style.display = 'block';
+        document.getElementById('payButton').disabled = false;
+      }
+    }
+    
+    // Attach event listener to button
+    document.getElementById('payButton').addEventListener('click', handlePayment);
+  </script>
+</body>
+</html>

@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Natural Puff - Direct Payment</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background-color: #f5f5f5;
+    }
+    .container {
+      max-width: 500px;
+      width: 100%;
+      padding: 30px;
+      background-color: white;
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      text-align: center;
+    }
+    h1 {
+      color: #167152;
+      margin-top: 0;
+    }
+    .payment-btn {
+      background-color: #167152;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-top: 20px;
+      transition: background-color 0.2s;
+    }
+    .payment-btn:hover {
+      background-color: #0e5038;
+    }
+    .payment-btn:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    .status {
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    .loading {
+      background-color: #e2f3ff;
+      color: #0c5460;
+    }
+    .success {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    .error {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+    .spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(255,255,255,.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 1s ease-in-out infinite;
+      margin-right: 10px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Natural Puff Payment</h1>
+    
+    <div id="loading-status" class="status loading">
+      <p>Preparing your payment...</p>
+    </div>
+    
+    <div id="error-status" class="status error hidden">
+      <p id="error-message">Something went wrong with the payment.</p>
+    </div>
+    
+    <div id="success-status" class="status success hidden">
+      <p>Payment successful! Redirecting to your order...</p>
+    </div>
+    
+    <button id="payment-btn" class="payment-btn" disabled>
+      <span class="spinner"></span>
+      Processing...
+    </button>
+    
+    <p id="debug-info" style="margin-top: 30px; font-size: 12px; color: #666;"></p>
+  </div>
+
+  <script>
+    // Get URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const orderId = urlParams.get('orderId');
+    const amount = urlParams.get('amount');
+    
+    // Elements
+    const paymentBtn = document.getElementById('payment-btn');
+    const loadingStatus = document.getElementById('loading-status');
+    const errorStatus = document.getElementById('error-status');
+    const errorMessage = document.getElementById('error-message');
+    const successStatus = document.getElementById('success-status');
+    const debugInfo = document.getElementById('debug-info');
+    
+    // Debug logging
+    function log(message) {
+      console.log(message);
+      debugInfo.textContent += message + '\n';
+    }
+    
+    // Show error
+    function showError(message) {
+      loadingStatus.classList.add('hidden');
+      errorStatus.classList.remove('hidden');
+      errorMessage.textContent = message;
+      
+      paymentBtn.disabled = false;
+      paymentBtn.innerHTML = 'Try Again';
+    }
+    
+    // Show success
+    function showSuccess() {
+      loadingStatus.classList.add('hidden');
+      errorStatus.classList.add('hidden');
+      successStatus.classList.remove('hidden');
+      
+      paymentBtn.disabled = true;
+      paymentBtn.innerHTML = 'Payment Successful';
+    }
+    
+    // Validate parameters
+    if (!orderId || !amount) {
+      showError('Missing order information. Please return to checkout.');
+      log('Missing parameters: orderId=' + orderId + ', amount=' + amount);
+    } else {
+      // Load Razorpay script
+      function loadRazorpayScript() {
+        log('Loading Razorpay script...');
+        
+        return new Promise((resolve, reject) => {
+          if (window.Razorpay) {
+            log('Razorpay already loaded');
+            resolve(true);
+            return;
+          }
+          
+          const script = document.createElement('script');
+          script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+          script.async = true;
+          
+          script.onload = () => {
+            log('Razorpay script loaded successfully');
+            resolve(true);
+          };
+          
+          script.onerror = () => {
+            log('Failed to load Razorpay script');
+            reject(new Error('Failed to load payment gateway'));
+          };
+          
+          document.body.appendChild(script);
+        });
+      }
+      
+      // Open Razorpay checkout directly without creating an order first
+      function openRazorpayCheckout() {
+        log('Opening Razorpay checkout directly...');
+        
+        return new Promise((resolve, reject) => {
+          try {
+            // Use direct payment approach without order creation
+            const options = {
+              key: 'rzp_test_qJB7Gu8slTfsRH', // Replace with your key from .env
+              amount: Math.round(parseFloat(amount) * 100), // Convert to paise
+              currency: 'INR',
+              name: 'Natural Puff',
+              description: 'Payment for Order #' + orderId,
+              // No order_id needed for direct payments
+              handler: function(response) {
+                log('Payment successful: ' + JSON.stringify(response));
+                resolve(response);
+              },
+              modal: {
+                ondismiss: function() {
+                  log('Checkout form closed by user');
+                  reject(new Error('Payment cancelled'));
+                }
+              },
+              prefill: {
+                name: 'Customer',
+                email: 'customer@example.com',
+                contact: '9999999999'
+              },
+              notes: {
+                order_id: orderId
+              },
+              theme: {
+                color: '#167152'
+              }
+            };
+            
+            log('Creating Razorpay instance...');
+            const razorpayInstance = new window.Razorpay(options);
+            
+            razorpayInstance.on('payment.failed', function(response) {
+              log('Payment failed: ' + response.error.description);
+              reject(new Error(response.error.description));
+            });
+            
+            // Open checkout after a delay
+            setTimeout(() => {
+              log('Opening checkout window now...');
+              razorpayInstance.open();
+            }, 1000);
+          } catch (error) {
+            log('Error opening checkout: ' + error.message);
+            reject(error);
+          }
+        });
+      }
+      
+      // Handle payment flow
+      async function handlePayment() {
+        try {
+          // Reset UI
+          loadingStatus.classList.remove('hidden');
+          errorStatus.classList.add('hidden');
+          successStatus.classList.add('hidden');
+          
+          paymentBtn.disabled = true;
+          paymentBtn.innerHTML = '<span class="spinner"></span> Processing...';
+          
+          // Step 1: Load Razorpay script
+          await loadRazorpayScript();
+          
+          // Step 2: Open checkout directly without creating an order
+          const paymentResponse = await openRazorpayCheckout();
+          
+          // Show success and redirect
+          showSuccess();
+          
+          // Update order status via a fetch request
+          try {
+            const updateResponse = await fetch('https://nmpaafoonvivsdxcbaoe.supabase.co/functions/v1/updateOrderStatus', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5tcGFhZm9vbnZpdnNkeGNiYW9lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU4OTYzOTcsImV4cCI6MjA2MTQ3MjM5N30.iAB0e2wl-TwGlFcE8gqCTgyUxFj7i9HSKv-bKMod8nU'
+              },
+              body: JSON.stringify({
+                order_id: orderId,
+                status: 'processing',
+                payment_id: paymentResponse.razorpay_payment_id
+              })
+            });
+            
+            log('Order status update response: ' + (updateResponse.ok ? 'success' : 'failed'));
+          } catch (updateError) {
+            log('Error updating order status: ' + updateError.message);
+            // Continue anyway
+          }
+          
+          // Redirect after a delay
+          setTimeout(() => {
+            window.location.href = `/order-success?id=${orderId}`;
+          }, 2000);
+          
+        } catch (error) {
+          log('Payment error: ' + error.message);
+          showError(error.message || 'Payment failed. Please try again.');
+          
+          // Try to update order status to failed
+          try {
+            await fetch('https://nmpaafoonvivsdxcbaoe.supabase.co/functions/v1/updateOrderStatus', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5tcGFhZm9vbnZpdnNkeGNiYW9lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU4OTYzOTcsImV4cCI6MjA2MTQ3MjM5N30.iAB0e2wl-TwGlFcE8gqCTgyUxFj7i9HSKv-bKMod8nU'
+              },
+              body: JSON.stringify({
+                order_id: orderId,
+                status: 'payment_failed',
+                error: error.message
+              })
+            });
+          } catch (updateError) {
+            log('Error updating order status to failed: ' + updateError.message);
+          }
+          
+          // Enable retry button
+          paymentBtn.disabled = false;
+          paymentBtn.innerHTML = 'Try Again';
+        }
+      }
+      
+      // Initialize
+      paymentBtn.addEventListener('click', handlePayment);
+      
+      // Auto-start payment flow
+      handlePayment();
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,324 @@
+
+import React, { useState, useEffect } from 'react';
+import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+import { Product } from '@/types/product';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Plus, Loader2, RefreshCw } from 'lucide-react';
+import ProductTable from './ProductTable';
+import ProductDrawer from './ProductDrawer';
+import DeleteProductDialog from './DeleteProductDialog';
+import RefreshDataButton from './RefreshDataButton';
+
+const ProductManagement = () => {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [drawerOpen, setDrawerOpen] = useState<boolean>(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState<boolean>(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  // Function to fetch all products
+  const fetchProducts = async () => {
+    setIsLoading(true);
+    setFetchError(null);
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Extract unique categories from products
+      const allCategories = new Set<string>();
+      
+      // Add 'General' as a default category
+      allCategories.add('General');
+      
+      // Transform data to include category
+      const productsWithCategory = data?.map(product => {
+        let category = '';
+        if (product.details) {
+          try {
+            const detailsObj = JSON.parse(product.details);
+            if (detailsObj.category) {
+              category = detailsObj.category;
+              allCategories.add(category);
+            }
+          } catch {
+            category = 'General';
+          }
+        }
+        
+        return {
+          ...product,
+          category: category || 'General'
+        };
+      }) || [];
+      
+      setProducts(productsWithCategory);
+      setCategories(Array.from(allCategories));
+    } catch (error: any) {
+      console.error('Error fetching products:', error);
+      setFetchError(error.message || 'Failed to load products');
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to load products',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Function to handle opening the drawer for editing or creating products
+  const handleEditProduct = (product: Product) => {
+    setSelectedProduct(product);
+    setDrawerOpen(true);
+  };
+
+  // Function to handle creating a new product
+  const handleNewProduct = () => {
+    setSelectedProduct({
+      id: 0, // Use 0 to indicate a new product
+      name: '',
+      description: '',
+      price: 0,
+      stock: 100,
+      image_url: '',
+      category: 'General',
+      details: JSON.stringify({ category: 'General' }),
+      nutritional_info: '',
+    });
+    setDrawerOpen(true);
+  };
+
+  // Function to handle delete product confirmation dialog
+  const handleDeleteClick = (product: Product) => {
+    setSelectedProduct(product);
+    setDeleteDialogOpen(true);
+  };
+
+  // Function to save a product (create or update)
+  const handleSaveProduct = async (product: Product) => {
+    setIsSubmitting(true);
+    try {
+      // Extract category and store it in details field as JSON
+      const { category, ...productData } = product;
+      
+      // Prepare details field to include category
+      let details = '';
+      try {
+        // If details already exists as JSON, parse it and add category
+        if (product.details) {
+          const detailsObj = JSON.parse(product.details);
+          detailsObj.category = category;
+          details = JSON.stringify(detailsObj);
+        } else {
+          // Create new details object with category
+          details = JSON.stringify({ category });
+        }
+      } catch {
+        // If details is not valid JSON, create new JSON with category
+        details = JSON.stringify({ category });
+      }
+
+      // Update the product data with new details
+      const updatedProduct = {
+        ...productData,
+        details
+      };
+      
+      // Set defaults for required fields
+      if (!updatedProduct.stock && updatedProduct.stock !== 0) {
+        updatedProduct.stock = 100;
+      }
+      
+      if (!updatedProduct.price && updatedProduct.price !== 0) {
+        updatedProduct.price = 0;
+      }
+
+      if (product.id === 0) {
+        // Create new product - first check if a product with this name already exists
+        const { data: existingProducts, error: checkError } = await supabase
+          .from('products')
+          .select('id')
+          .eq('name', updatedProduct.name);
+
+        if (checkError) {
+          throw checkError;
+        }
+
+        // If product with this name already exists, throw an error
+        if (existingProducts && existingProducts.length > 0) {
+          throw new Error('A product with this name already exists');
+        }
+
+        // Create new product
+        const { data, error } = await supabase
+          .from('products')
+          .insert(updatedProduct)
+          .select();
+
+        if (error) {
+          throw error;
+        }
+        
+        toast({
+          title: 'Success',
+          description: 'Product created successfully',
+        });
+      } else {
+        // Update existing product
+        const { error } = await supabase
+          .from('products')
+          .update(updatedProduct)
+          .eq('id', product.id);
+
+        if (error) {
+          throw error;
+        }
+        
+        toast({
+          title: 'Success',
+          description: 'Product updated successfully',
+        });
+      }
+
+      // Refresh products list and close drawer
+      await fetchProducts();
+      setDrawerOpen(false);
+    } catch (error: any) {
+      console.error('Error saving product:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to save product',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Function to delete a product
+  const handleDeleteProduct = async () => {
+    if (!selectedProduct) return;
+    
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase
+        .from('products')
+        .delete()
+        .eq('id', selectedProduct.id);
+
+      if (error) throw error;
+
+      toast({
+        title: 'Success',
+        description: 'Product deleted successfully',
+      });
+
+      // Refresh products list and close dialog
+      fetchProducts();
+      setDeleteDialogOpen(false);
+    } catch (error: any) {
+      console.error('Error deleting product:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to delete product',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Card className="w-full">
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle className="text-xl font-semibold">Product Management</CardTitle>
+        <div className="flex items-center gap-2">
+          <Button 
+            onClick={fetchProducts} 
+            variant="outline" 
+            size="sm"
+            disabled={isLoading}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          
+          <RefreshDataButton onRefreshComplete={fetchProducts} />
+          
+          <Button onClick={handleNewProduct} className="bg-brand-600 hover:bg-brand-700">
+            <Plus className="mr-2 h-4 w-4" />
+            Add Product
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex justify-center p-8">
+            <Loader2 className="h-8 w-8 animate-spin text-brand-600" />
+          </div>
+        ) : fetchError ? (
+          <div className="text-center p-4 bg-red-50 rounded-md border border-red-200">
+            <p className="text-red-700 mb-2">{fetchError}</p>
+            <Button 
+              onClick={fetchProducts}
+              variant="destructive"
+              size="sm"
+            >
+              <RefreshCw className="mr-2 h-4 w-4" /> Try Again
+            </Button>
+          </div>
+        ) : products.length === 0 ? (
+          <div className="text-center p-8 text-gray-500">
+            <p>No products available. Add your first product to get started.</p>
+          </div>
+        ) : (
+          <ProductTable
+            products={products}
+            onEdit={handleEditProduct}
+            onDelete={handleDeleteClick}
+          />
+        )}
+      </CardContent>
+
+      {/* Product Edit/Create Drawer */}
+      <ProductDrawer
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        product={selectedProduct}
+        categories={categories}
+        onSave={handleSaveProduct}
+        isSubmitting={isSubmitting}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteProductDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        product={selectedProduct}
+        onConfirm={handleDeleteProduct}
+        isSubmitting={isSubmitting}
+      />
+    </Card>
+  );
+};
+
+export default ProductManagement;
