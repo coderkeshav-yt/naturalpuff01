@@ -217,14 +217,30 @@ const ProductForm: React.FC<ProductFormProps> = ({
     }
 
     try {
-      // Store variants info in the details field as JSON
-      const currentDetails = activeProduct.details ? JSON.parse(activeProduct.details) : {};
+      // Safely parse the details field
+      let currentDetails = {};
+      if (activeProduct.details) {
+        try {
+          if (typeof activeProduct.details === 'string') {
+            currentDetails = JSON.parse(activeProduct.details);
+          } else {
+            currentDetails = activeProduct.details;
+          }
+        } catch (e) {
+          console.error('Error parsing details:', e);
+          // If parsing fails, use an empty object
+          currentDetails = {};
+        }
+      }
+      
+      // Create updated details with variants
       const updatedDetails = {
         ...currentDetails,
         category: activeProduct.category,
         variants: variants
       };
       
+      // Create the final product object
       const updatedProduct = {
         ...activeProduct,
         details: JSON.stringify(updatedDetails)
@@ -346,6 +362,32 @@ const ProductForm: React.FC<ProductFormProps> = ({
         ))}
       </div>
       
+      <div className="grid gap-2">
+        <Label htmlFor="details">Product Details</Label>
+        <div className="text-sm text-muted-foreground mb-2">
+          This field is automatically managed. You don't need to edit it directly.
+        </div>
+        <Textarea
+          id="details"
+          value={activeProduct?.details && typeof activeProduct.details === 'string' ? 
+            (() => {
+              try {
+                // Try to parse and prettify the JSON
+                const parsed = JSON.parse(activeProduct.details);
+                return JSON.stringify(parsed, null, 2);
+              } catch (e) {
+                // If it's not valid JSON, return as is
+                return activeProduct.details;
+              }
+            })() : ''}
+          readOnly={true}
+          disabled={true}
+          placeholder="Product details are automatically generated"
+          className="font-mono text-sm h-32 bg-muted"
+        />
+        {formErrors.details && <p className="text-red-500 text-sm">{formErrors.details}</p>}
+      </div>
+
       <div className="grid gap-2">
         <Label htmlFor="category">Category</Label>
         <div className="flex items-center gap-2">

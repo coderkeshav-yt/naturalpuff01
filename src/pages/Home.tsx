@@ -7,6 +7,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { motion } from 'framer-motion';
 import { Star, ChevronRight, CheckCircle, Calendar, Gift } from 'lucide-react';
 import { ImageCarousel } from '@/components/ui/image-carousel';
+import { HeroCarousel } from '@/components/ui/hero-carousel';
 
 // Product interface
 interface Product {
@@ -211,6 +212,8 @@ const Home = () => {
 
   return (
     <div>
+      {/* Hero Carousel */}
+      <HeroCarousel />
       {/* Hero Section with Advanced Animation */}
       <section className="relative py-16 md:py-24 lg:py-32 bg-gradient-to-b from-cream-50 to-cream-200 overflow-hidden">
         <motion.div 
@@ -882,68 +885,68 @@ const Home = () => {
                 </div>
               </motion.div>
             ))}
-          </div>
         </div>
-      </section>
+      </div>
+    </section>
 
-      {/* Newsletter Signup with Animation */}
-      <section className="py-20 md:py-28 bg-cream-100 relative overflow-hidden">
+    {/* Newsletter Signup with Animation */}
+    <section className="py-20 md:py-28 bg-cream-100 relative overflow-hidden">
+      <motion.div 
+        className="absolute top-20 right-[10%] w-96 h-96 rounded-full bg-gold-400 mix-blend-multiply filter blur-3xl opacity-20"
+        animate={{ 
+          x: [0, 30, -20, 0],
+          y: [0, -40, 20, 0],
+        }}
+        transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
+      />
+      <motion.div 
+        className="absolute bottom-20 left-[10%] w-96 h-96 rounded-full bg-brand-500 mix-blend-multiply filter blur-3xl opacity-20"
+        animate={{ 
+          x: [0, -30, 20, 0],
+          y: [0, 40, -20, 0],
+        }}
+        transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
+      />
+      
+      <div className="container-custom relative z-10">
         <motion.div 
-          className="absolute top-20 right-[10%] w-96 h-96 rounded-full bg-gold-400 mix-blend-multiply filter blur-3xl opacity-20"
-          animate={{ 
-            x: [0, 30, -20, 0],
-            y: [0, -40, 20, 0],
-          }}
-          transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
-        />
-        <motion.div 
-          className="absolute bottom-20 left-[10%] w-96 h-96 rounded-full bg-brand-500 mix-blend-multiply filter blur-3xl opacity-20"
-          animate={{ 
-            x: [0, -30, 20, 0],
-            y: [0, 40, -20, 0],
-          }}
-          transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
-        />
-        
-        <div className="container-custom relative z-10">
-          <motion.div 
-            className="max-w-3xl mx-auto text-center"
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
-          >
-            <span className="px-4 py-1.5 bg-brand-100 text-brand-700 rounded-full text-sm font-medium mb-6 inline-block">Stay Updated</span>
-            <h2 className="text-4xl md:text-5xl font-bold mb-4 font-playfair">Join Our Newsletter</h2>
-            <div className="w-24 h-1 bg-gold-500 mx-auto mb-8"></div>
-            <p className="text-xl text-brand-700 mb-10 leading-relaxed">
-              Subscribe to receive updates on new products, special promotions, and healthy recipe ideas with makhana.
+          className="max-w-3xl mx-auto text-center"
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.6 }}
+        >
+          <span className="px-4 py-1.5 bg-brand-100 text-brand-700 rounded-full text-sm font-medium mb-6 inline-block">Stay Updated</span>
+          <h2 className="text-4xl md:text-5xl font-bold mb-4 font-playfair">Join Our Newsletter</h2>
+          <div className="w-24 h-1 bg-gold-500 mx-auto mb-8"></div>
+          <p className="text-xl text-brand-700 mb-10 leading-relaxed">
+            Subscribe to receive updates on new products, special promotions, and healthy recipe ideas with makhana.
+          </p>
+          <form onSubmit={handleNewsletterSubmit} className="max-w-md mx-auto">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Input 
+                type="email" 
+                placeholder="Your email address" 
+                className="flex-grow text-lg py-6 shadow-md"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+              <Button 
+                type="submit" 
+                className="bg-brand-600 hover:bg-brand-700 text-white whitespace-nowrap px-8 py-6 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+              >
+                Subscribe Now
+              </Button>
+            </div>
+            <p className="text-sm text-brand-700 mt-4">
+              We respect your privacy and will never share your information.
             </p>
-            <form onSubmit={handleNewsletterSubmit} className="max-w-md mx-auto">
-              <div className="flex flex-col sm:flex-row gap-3">
-                <Input 
-                  type="email" 
-                  placeholder="Your email address" 
-                  className="flex-grow text-lg py-6 shadow-md"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-                <Button 
-                  type="submit" 
-                  className="bg-brand-600 hover:bg-brand-700 text-white whitespace-nowrap px-8 py-6 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
-                >
-                  Subscribe Now
-                </Button>
-              </div>
-              <p className="text-sm text-brand-700 mt-4">
-                We respect your privacy and will never share your information.
-              </p>
-            </form>
-          </motion.div>
-        </div>
-      </section>
-    </div>
+          </form>
+        </motion.div>
+      </div>
+    </section>
+  </div>
   );
 };
 

@@ -28,25 +28,26 @@ type CheckoutFormData = z.infer<typeof checkoutSchema>;
 interface CheckoutFormProps {
   onFormSubmit: (data: CustomerInfo) => void;
   isSubmitting: boolean;
+  initialData?: CustomerInfo | null;
 }
 
-const CheckoutForm = ({ onFormSubmit, isSubmitting }: CheckoutFormProps) => {
+const CheckoutForm = ({ onFormSubmit, isSubmitting, initialData }: CheckoutFormProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
   
-  // Initialize the form
+  // Initialize the form with initialData if provided
   const form = useForm<CheckoutFormData>({
     resolver: zodResolver(checkoutSchema),
     defaultValues: {
-      firstName: '',
-      lastName: '',
-      email: '',
-      phone: '',
-      address: '',
-      city: '',
-      state: '',
-      pincode: '',
+      firstName: initialData ? initialData.name.split(' ')[0] : '',
+      lastName: initialData ? initialData.name.split(' ').slice(1).join(' ') : '',
+      email: initialData?.email || '',
+      phone: initialData?.phone || '',
+      address: initialData?.address || '',
+      city: initialData?.city || '',
+      state: initialData?.state || '',
+      pincode: initialData?.pincode || '',
     },
   });
 

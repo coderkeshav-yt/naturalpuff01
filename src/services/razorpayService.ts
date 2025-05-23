@@ -154,11 +154,12 @@ export const openRazorpayCheckout = (
       onFailure(response.error);
     });
     
-    // Open checkout with a slight delay to ensure everything is ready
+    // Open checkout with a longer delay to ensure everything is ready
+    // Increasing the delay to 1500ms to give more time for initialization
     setTimeout(() => {
       console.log('Opening Razorpay checkout window...');
       razorpay.open();
-    }, 500);
+    }, 1500);
   } catch (error) {
     console.error('Error opening Razorpay checkout:', error);
     onFailure(error);
@@ -182,11 +183,23 @@ export const processPayment = async (
 ): Promise<void> => {
   try {
     console.log('Starting direct payment process for order:', orderId);
+    console.log('Customer info:', { ...customerInfo, phone: customerInfo.phone.substring(0, 3) + '****' });
+    console.log('Amount:', amount);
     
     // Step 1: Load the Razorpay script
     const scriptLoaded = await loadRazorpayScript();
     if (!scriptLoaded) {
+      console.error('Razorpay script failed to load');
       throw new Error('Failed to load Razorpay script');
+    }
+    
+    console.log('Razorpay script loaded successfully');
+    
+    // Verify Razorpay is available in window
+    if (typeof window.Razorpay !== 'function') {
+      console.error('Razorpay is not available as a function in window object');
+      console.log('Window Razorpay type:', typeof window.Razorpay);
+      throw new Error('Razorpay is not properly initialized');
     }
     
     // Step 2: Get the Razorpay key from environment
@@ -220,12 +233,33 @@ export const processPayment = async (
     console.log('Payment options configured:', {
       ...options,
       key: '***HIDDEN***', // Hide key in logs
-      amount: options.amount
+      amount: options.amount,
+      prefill: { ...options.prefill, contact: '****' } // Hide contact in logs
     });
     
-    // Step 4: Open the payment window directly
-    console.log('Opening direct payment window...');
-    openRazorpayCheckout(options, onSuccess, onFailure);
+    // Add a small delay before opening checkout to ensure DOM is ready
+    console.log('Preparing to open payment window...');
+    
+    // Create a promise to track Razorpay initialization
+    const razorpayPromise = new Promise<void>((resolve) => {
+      setTimeout(() => {
+        console.log('Opening direct payment window...');
+        try {
+          // Step 4: Open the payment window directly
+          openRazorpayCheckout(options, onSuccess, onFailure);
+          console.log('Razorpay checkout opened successfully');
+          resolve();
+        } catch (err) {
+          console.error('Error during Razorpay checkout opening:', err);
+          onFailure(err);
+          resolve(); // Resolve anyway to continue execution
+        }
+      }, 2000); // Increased delay to 2 seconds for better reliability
+    });
+    
+    // Wait for Razorpay to initialize
+    await razorpayPromise;
+    
   } catch (error) {
     console.error('Payment processing error:', error);
     onFailure(error);

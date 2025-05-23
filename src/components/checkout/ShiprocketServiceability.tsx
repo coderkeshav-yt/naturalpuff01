@@ -23,6 +23,7 @@ interface ShiprocketServiceabilityCheckerProps {
   setShippingCost: (cost: number) => void;
   selectedCourier: string;
   setSelectedCourier: (courier: string) => void;
+  setCourierOptions?: (options: CourierOption[]) => void;
 }
 
 const ShiprocketServiceabilityChecker = ({
@@ -31,10 +32,11 @@ const ShiprocketServiceabilityChecker = ({
   shippingCost,
   setShippingCost,
   selectedCourier,
-  setSelectedCourier
+  setSelectedCourier,
+  setCourierOptions
 }: ShiprocketServiceabilityCheckerProps) => {
   const [isChecking, setIsChecking] = useState(false);
-  const [courierOptions, setCourierOptions] = useState<CourierOption[]>([]);
+  const [courierOptions, setLocalCourierOptions] = useState<CourierOption[]>([]);
   const [isServiceable, setIsServiceable] = useState<boolean | null>(null);
   const { toast } = useToast();
 
@@ -108,7 +110,11 @@ const ShiprocketServiceabilityChecker = ({
           });
         }
         
-        setCourierOptions(mockCouriers);
+        setLocalCourierOptions(mockCouriers);
+        // Also update parent component's state if the prop is provided
+        if (setCourierOptions) {
+          setCourierOptions(mockCouriers);
+        }
         setIsServiceable(true);
       }
       

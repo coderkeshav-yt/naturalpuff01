@@ -12,6 +12,7 @@ import OrdersManagement from '@/components/admin/OrdersManagement';
 import UserManagement from '@/components/admin/UserManagement';
 import DashboardOverview from '@/components/admin/DashboardOverview';
 import ProductManagement from '@/components/admin/ProductManagement';
+import CarouselManagement from '@/components/admin/CarouselManagement';
 
 const ADMIN_USER_ID = 'a3301900-bf5e-4afe-a114-d59bb08a05a1';
 
@@ -160,6 +161,7 @@ const AdminDashboard = () => {
           <TabsTrigger value="orders" className="text-base whitespace-nowrap">Orders</TabsTrigger>
           <TabsTrigger value="users" className="text-base whitespace-nowrap">Users</TabsTrigger>
           <TabsTrigger value="coupons" className="text-base whitespace-nowrap">Coupons</TabsTrigger>
+          <TabsTrigger value="carousel" className="text-base whitespace-nowrap">Carousel</TabsTrigger>
         </TabsList>
         
         <TabsContent value="overview">
@@ -180,6 +182,10 @@ const AdminDashboard = () => {
         
         <TabsContent value="coupons">
           <CouponManagement />
+        </TabsContent>
+        
+        <TabsContent value="carousel">
+          <CarouselManagement />
         </TabsContent>
       </Tabs>
     </div>

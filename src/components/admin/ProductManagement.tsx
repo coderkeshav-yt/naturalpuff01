@@ -100,7 +100,7 @@ const ProductManagement = () => {
       price: 0,
       stock: 100,
       image_url: '',
-      category: 'General',
+      category: 'General', // This is used only in the UI, not sent to DB directly
       details: JSON.stringify({ category: 'General' }),
       nutritional_info: '',
     });
@@ -117,64 +117,69 @@ const ProductManagement = () => {
   const handleSaveProduct = async (product: Product) => {
     setIsSubmitting(true);
     try {
-      // Extract category and store it in details field as JSON
-      const { category, ...productData } = product;
+      // Skip name uniqueness check when editing stock or other fields
+      // We'll only do the check if we're creating a new product or explicitly changing the name
       
-      // Prepare details field to include category
-      let details = '';
+      // Process the product details
+      // Create a clean version of the product without the category field
+      // since category is not a direct column in the products table
+      const { category, ...productWithoutCategory } = product;
+      let processedProduct = { ...productWithoutCategory };
+      
+      // Handle the details field - ensure it's valid JSON with category and variants
       try {
-        // If details already exists as JSON, parse it and add category
+        // Parse existing details if available
+        let detailsObj = {};
         if (product.details) {
-          const detailsObj = JSON.parse(product.details);
-          detailsObj.category = category;
-          details = JSON.stringify(detailsObj);
-        } else {
-          // Create new details object with category
-          details = JSON.stringify({ category });
+          if (typeof product.details === 'string') {
+            try {
+              detailsObj = JSON.parse(product.details);
+            } catch (e) {
+              console.error('Failed to parse product details JSON:', e);
+              detailsObj = {};
+            }
+          } else {
+            detailsObj = product.details;
+          }
         }
-      } catch {
-        // If details is not valid JSON, create new JSON with category
-        details = JSON.stringify({ category });
+        
+        // Store category in details JSON instead of as a direct column
+        detailsObj.category = category || 'General';
+        
+        // Convert details back to string
+        processedProduct.details = JSON.stringify(detailsObj);
+      } catch (e) {
+        console.error('Error processing product details:', e);
+        // Fallback to simple details object
+        processedProduct.details = JSON.stringify({ category: category || 'General' });
       }
-
-      // Update the product data with new details
-      const updatedProduct = {
-        ...productData,
-        details
+      
+      // Make sure we're not including any fields that don't exist in the database schema
+      // Create a clean database product object without UI-only fields
+      const dbProduct = {
+        name: processedProduct.name,
+        description: processedProduct.description,
+        price: processedProduct.price,
+        stock: processedProduct.stock,
+        image_url: processedProduct.image_url,
+        details: processedProduct.details,
+        nutritional_info: processedProduct.nutritional_info || ''
       };
       
-      // Set defaults for required fields
-      if (!updatedProduct.stock && updatedProduct.stock !== 0) {
-        updatedProduct.stock = 100;
-      }
-      
-      if (!updatedProduct.price && updatedProduct.price !== 0) {
-        updatedProduct.price = 0;
-      }
-
+      // Creating a new product
       if (product.id === 0) {
-        // Create new product - first check if a product with this name already exists
-        const { data: existingProducts, error: checkError } = await supabase
-          .from('products')
-          .select('id')
-          .eq('name', updatedProduct.name);
-
-        if (checkError) {
-          throw checkError;
-        }
-
-        // If product with this name already exists, throw an error
-        if (existingProducts && existingProducts.length > 0) {
-          throw new Error('A product with this name already exists');
-        }
-
-        // Create new product
+        // Insert the new product directly - let the database handle uniqueness
         const { data, error } = await supabase
           .from('products')
-          .insert(updatedProduct)
+          .insert(dbProduct)
           .select();
 
         if (error) {
+          console.error('Error creating product:', error);
+          // Check if it's a unique constraint violation
+          if (error.message && error.message.includes('unique constraint')) {
+            throw new Error('A product with this name already exists');
+          }
           throw error;
         }
         
@@ -183,13 +188,48 @@ const ProductManagement = () => {
           description: 'Product created successfully',
         });
       } else {
-        // Update existing product
+        // Updating an existing product
+        // Get the current product first to compare
+        const { data: currentProduct, error: fetchError } = await supabase
+          .from('products')
+          .select('*')
+          .eq('id', product.id)
+          .single();
+        
+        if (fetchError) {
+          throw fetchError;
+        }
+        
+        // Only check for name uniqueness if the name has changed
+        if (currentProduct && 
+            product.name && 
+            currentProduct.name !== product.name) {
+          
+          // Check if another product has this name
+          const { data: existingProducts, error: checkError } = await supabase
+            .from('products')
+            .select('id')
+            .ilike('name', product.name.trim())
+            .neq('id', product.id);
+
+          if (checkError) throw checkError;
+
+          if (existingProducts && existingProducts.length > 0) {
+            throw new Error('A product with this name already exists');
+          }
+        }
+
+        // Update the product
         const { error } = await supabase
           .from('products')
-          .update(updatedProduct)
+          .update(dbProduct)
           .eq('id', product.id);
 
         if (error) {
+          console.error('Error updating product:', error);
+          if (error.message && error.message.includes('unique constraint')) {
+            throw new Error('A product with this name already exists');
+          }
           throw error;
         }
         

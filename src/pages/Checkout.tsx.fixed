@@ -36,7 +36,6 @@ const Checkout = () => {
   const [selectedCourier, setSelectedCourier] = useState('');
   const [pincode, setPincode] = useState('');
   const [isRazorpayReady, setIsRazorpayReady] = useState(false);
-  const [courierOptions, setCourierOptions] = useState<{courier_code: string; courier_name: string}[]>([]);
   
   // Coupon state
   const [couponCode, setCouponCode] = useState('');
@@ -488,36 +487,33 @@ const Checkout = () => {
         image_url: item.image_url
       }));
       
-      // Prepare the order data with only essential fields that are definitely in the database schema
       const orderData = {
-        // Basic order information
+        customer_name: customerInfo.name,
+        customer_email: customerInfo.email,
+        customer_phone: customerInfo.phone,
+        shipping_address: customerInfo.address,
+        shipping_city: customerInfo.city,
+        shipping_state: customerInfo.state,
+        shipping_pincode: customerInfo.pincode,
+        subtotal: subtotal,
+        discount: discountAmount,
+        shipping_cost: shippingCost,
+        total: finalTotal,
+        payment_method: paymentMethod,
+        payment_status: paymentMethod === 'cod' ? 'pending' : 'initiated',
         status: 'pending',
-        total_amount: finalTotal,
+        items: orderItems,
         user_id: user?.id || null,
-        
-        // Store customer and shipping info as JSON
-        shipping_address: JSON.stringify({
-          customer_name: customerInfo.name,
-          customer_email: customerInfo.email,
-          customer_phone: customerInfo.phone,
-          address: customerInfo.address,
-          city: customerInfo.city,
-          state: customerInfo.state,
-          pincode: customerInfo.pincode,
-          payment_method: paymentMethod,
-          shipping_cost: shippingCost,
-          subtotal: subtotal,
-          discount: discountAmount,
-          courier: courierOptions.find(option => option.courier_code === selectedCourier)?.courier_name || 'Standard Shipping',
-          items: orderItems
-        })
+        courier_name: selectedCourier,
       };
       
-      // Coupon data is already included in the shipping_address JSON
+      if (appliedCoupon) {
+        orderData.coupon_code = appliedCoupon.code;
+        orderData.coupon_discount_percent = appliedCoupon.discount_percent;
+      }
       
       console.log('Creating order with data:', { ...orderData, items: `${orderItems.length} items` });
       
-      // Create the order in the database
       const { data: order, error: orderError } = await supabase
         .from('orders')
         .insert(orderData)
@@ -525,66 +521,31 @@ const Checkout = () => {
         .single();
       
       if (orderError) {
-        console.error('Order creation error:', orderError);
+        console.error('Error creating order:', orderError);
         
         // Check if this is an RLS error
         if (orderError.message.includes('policy') || orderError.message.includes('permission')) {
           console.log('Detected RLS error, showing permission fix option');
           setShowRLSError(true);
-          setIsProcessing(false);
-          return;
+          throw new Error('Database permission error. Please use the "Fix Permissions" button below.');
         }
         
-        toast({
-          title: "Order Error",
-          description: `Failed to create order: ${orderError.message}`,
-          variant: "destructive"
-        });
-        setIsProcessing(false);
-        return;
+        throw new Error(`Failed to create order: ${orderError.message}`);
       }
       
       if (!order) {
-        throw new Error('No order data returned after creation');
+        throw new Error('Failed to create order: No order data returned');
       }
       
-      console.log('Order created successfully:', order.id);
+      console.log('Order created successfully:', order);
       
       // Process payment or redirect based on payment method
       if (paymentMethod === 'online') {
-        // Handle online payment
         console.log('Processing online payment for order:', order.id);
         await handleRazorpayPayment(order.id);
       } else {
-        // Handle COD order
+        // COD order - update status and redirect
         console.log('Processing COD order:', order.id);
-        
-        // Send order notification email
-        try {
-          await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sendOrderNotification`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
-            },
-            body: JSON.stringify({
-              orderId: order.id,
-              customerName: customerInfo.name,
-              amount: finalTotal,
-              email: customerInfo.email,
-              phone: customerInfo.phone,
-              items: items.map(item => ({
-                name: item.name,
-                quantity: item.quantity,
-                price: item.price
-              }))
-            })
-          });
-          console.log('Order notification sent successfully');
-        } catch (emailError) {
-          console.error('Failed to send order notification:', emailError);
-          // Don't block the order process if email fails
-        }
         
         // Show success message
         toast({
@@ -598,6 +559,8 @@ const Checkout = () => {
       }
     } catch (error: any) {
       console.error('Error placing order:', error);
+      
+      // Show error message
       toast({
         title: "Order Error",
         description: error.message || "Failed to place your order. Please try again.",
@@ -626,9 +589,8 @@ const Checkout = () => {
               </CardHeader>
               <CardContent>
                 <CheckoutForm 
-                  onFormSubmit={handleFormSubmit}
+                  onSubmit={handleFormSubmit}
                   initialData={customerInfo}
-                  isSubmitting={isProcessing}
                 />
               </CardContent>
             </Card>
@@ -648,12 +610,11 @@ const Checkout = () => {
                   {pincode ? (
                     <ShiprocketServiceabilityChecker 
                       pincode={pincode}
-                      setPincode={setPincode}
-                      shippingCost={shippingCost}
-                      setShippingCost={setShippingCost}
+                      onSelectCourier={(courier, cost) => {
+                        setSelectedCourier(courier);
+                        setShippingCost(cost);
+                      }}
                       selectedCourier={selectedCourier}
-                      setSelectedCourier={setSelectedCourier}
-                      setCourierOptions={setCourierOptions}
                     />
                   ) : (
                     <Alert>
@@ -729,56 +690,6 @@ const Checkout = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {/* Cart Items Display */}
-                {items.length > 0 && (
-                  <div className="space-y-3 mb-4">
-                    {items.map((item) => (
-                      <div key={item.id} className="flex justify-between items-center py-2 border-b">
-                        <div className="flex items-center">
-                          <div className="w-12 h-12 rounded-md overflow-hidden mr-3">
-                            <img 
-                              src={item.image_url} 
-                              alt={item.name} 
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
-                          <div>
-                            <p className="font-medium">{item.name}</p>
-                            <div className="flex items-center mt-1">
-                              <Button 
-                                variant="outline" 
-                                size="icon" 
-                                className="h-6 w-6" 
-                                onClick={() => handleQuantityChange(item.id, -1)}
-                              >
-                                <Minus className="h-3 w-3" />
-                              </Button>
-                              <span className="mx-2 text-sm">{item.quantity}</span>
-                              <Button 
-                                variant="outline" 
-                                size="icon" 
-                                className="h-6 w-6" 
-                                onClick={() => handleQuantityChange(item.id, 1)}
-                              >
-                                <Plus className="h-3 w-3" />
-                              </Button>
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                className="h-6 w-6 ml-2 text-red-500" 
-                                onClick={() => removeItem(item.id)}
-                              >
-                                <Trash className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                        <span className="font-medium">₹{item.price * item.quantity}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                
                 <div className="flex justify-between">
                   <span className="text-gray-600">Subtotal</span>
                   <span className="font-medium">₹{subtotal}</span>

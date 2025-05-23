@@ -1,0 +1,19 @@
+{
+  "name": "send-order-notification",
+  "version": "1.0.0",
+  "description": "Email notification function for new orders",
+  "main": "index.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "supabase",
+    "email",
+    "notification"
+  ],
+  "author": "Natural Puff",
+  "license": "ISC",
+  "dependencies": {
+    "smtp": "^0.1.4"
+  }
+}
