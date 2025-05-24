@@ -62,6 +62,9 @@ const Checkout = () => {
         });
       }
     }
+    
+    // Ensure page scrolls to top when checkout component mounts
+    window.scrollTo(0, 0);
   }, [items, navigate]);
 
   // Initialize Razorpay on component mount

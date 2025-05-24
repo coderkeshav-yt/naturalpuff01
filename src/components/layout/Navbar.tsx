@@ -50,6 +50,8 @@ const Navbar = () => {
 
   const handleCartClick = () => {
     navigate('/checkout');
+    // Ensure page scrolls to top after navigation
+    window.scrollTo(0, 0);
   };
 
   return (
