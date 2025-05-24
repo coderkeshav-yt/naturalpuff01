@@ -20,7 +20,7 @@ import OrderPolicyError from '@/components/layout/OrderPolicyError';
 import DirectPermissionFix from '@/components/admin/DirectPermissionFix';
 
 const Checkout = () => {
-  const { items, totalPrice, clearCart, updateQuantity, removeItem } = useCart();
+  const { items, totalPrice, clearCart, updateQuantity, removeItem, applyCoupon, removeCoupon, appliedCoupon, discountAmount, finalTotal } = useCart();
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -40,13 +40,10 @@ const Checkout = () => {
   
   // Coupon state
   const [couponCode, setCouponCode] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
   const [isCouponLoading, setIsCouponLoading] = useState(false);
-  const [discountAmount, setDiscountAmount] = useState(0);
   
-  // Calculate final total
-  const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const finalTotal = subtotal - discountAmount + shippingCost;
+  // Calculate cart totals
+  const subtotal = totalPrice;
 
   // Check if cart is empty and redirect if needed
   useEffect(() => {
@@ -145,12 +142,17 @@ const Checkout = () => {
         return;
       }
 
-      // Apply the coupon
-      setAppliedCoupon(data);
-      
-      // Calculate discount
-      const discount = (subtotal * data.discount_percent) / 100;
-      setDiscountAmount(discount);
+      // Convert database coupon to CartContext coupon format
+      const cartCoupon = {
+        code: data.code,
+        discount_percent: data.discount_percent,
+        expiry_date: data.expires_at,
+        is_active: data.is_active,
+        min_order_value: 0 // Default value if not present in database
+      };
+
+      // Apply the coupon using CartContext
+      applyCoupon(cartCoupon);
       
       toast({
         title: "Coupon Applied",
@@ -170,8 +172,7 @@ const Checkout = () => {
 
   // Remove coupon
   const handleRemoveCoupon = () => {
-    setAppliedCoupon(null);
-    setDiscountAmount(0);
+    removeCoupon();
     setCouponCode('');
     toast({
       title: "Coupon Removed",
@@ -559,9 +560,25 @@ const Checkout = () => {
         // Handle COD order
         console.log('Processing COD order:', order.id);
         
-        // Send order notification email
-        try {
-          await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sendOrderNotification`, {
+        // First clear cart and update UI state before making network requests
+        // This prevents UI freezing during navigation
+        clearCart();
+        setIsProcessing(false);
+        
+        // Show success message
+        toast({
+          title: "Order Placed",
+          description: "Your order has been placed successfully. Thank you for shopping with us!",
+        });
+        
+        // Use setTimeout to ensure the UI updates before navigation
+        setTimeout(() => {
+          // Navigate to success page
+          navigate(`/order-success?id=${order.id}`);
+          
+          // Send order notification email in background after navigation
+          // This prevents blocking the UI
+          fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sendOrderNotification`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -579,22 +596,12 @@ const Checkout = () => {
                 price: item.price
               }))
             })
+          }).then(() => {
+            console.log('Order notification sent successfully');
+          }).catch((emailError) => {
+            console.error('Failed to send order notification:', emailError);
           });
-          console.log('Order notification sent successfully');
-        } catch (emailError) {
-          console.error('Failed to send order notification:', emailError);
-          // Don't block the order process if email fails
-        }
-        
-        // Show success message
-        toast({
-          title: "Order Placed",
-          description: "Your order has been placed successfully. Thank you for shopping with us!",
-        });
-        
-        // Clear cart and redirect to success page
-        clearCart();
-        navigate(`/order-success?id=${order.id}`);
+        }, 100);
       }
     } catch (error: any) {
       console.error('Error placing order:', error);
@@ -779,6 +786,43 @@ const Checkout = () => {
                   </div>
                 )}
                 
+                {/* Coupon Code Input */}
+                <div className="space-y-2 mb-4">
+                  <div className="flex items-center space-x-2">
+                    <Input
+                      placeholder="Enter coupon code"
+                      value={couponCode}
+                      onChange={(e) => setCouponCode(e.target.value)}
+                      className="flex-1"
+                      disabled={isCouponLoading || !!appliedCoupon}
+                    />
+                    {appliedCoupon ? (
+                      <Button
+                        variant="outline"
+                        onClick={handleRemoveCoupon}
+                        disabled={isCouponLoading}
+                      >
+                        Remove
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        onClick={handleApplyCoupon}
+                        disabled={isCouponLoading || !couponCode.trim()}
+                      >
+                        {isCouponLoading ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Applying...
+                          </>
+                        ) : (
+                          'Apply'
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                
                 <div className="flex justify-between">
                   <span className="text-gray-600">Subtotal</span>
                   <span className="font-medium">₹{subtotal}</span>
@@ -802,7 +846,7 @@ const Checkout = () => {
                 
                 <div className="flex justify-between text-lg font-bold">
                   <span>Total</span>
-                  <span className="text-brand-800">₹{finalTotal}</span>
+                  <span className="text-brand-800">₹{finalTotal + shippingCost}</span>
                 </div>
                 
                 {/* Customer info display */}

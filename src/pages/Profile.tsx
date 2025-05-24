@@ -176,20 +176,46 @@ const Profile = () => {
 
   const fetchOrderDetails = async (orderId: string) => {
     try {
+      // First try to get items from order_items table
       const { data, error } = await supabase
         .from('order_items')
         .select('*')
         .eq('order_id', orderId);
 
-      if (error) {
-        throw error;
+      const order = orders.find(o => o.id === orderId);
+      if (!order) return;
+
+      let orderItems: OrderItem[] = [];
+      
+      // If we got items from the order_items table, use those
+      if (!error && data && data.length > 0) {
+        orderItems = data as OrderItem[];
+      } 
+      // Otherwise, try to extract items from the shipping_address JSON
+      else {
+        console.log('No items found in order_items table, trying to extract from shipping_address');
+        try {
+          // Parse shipping_address if it's a string
+          const shippingAddressData = typeof order.shipping_address === 'string' 
+            ? JSON.parse(order.shipping_address as string)
+            : order.shipping_address;
+            
+          // Check if items exist in the shipping_address JSON
+          if (shippingAddressData && Array.isArray(shippingAddressData.items)) {
+            orderItems = shippingAddressData.items.map((item: any, index: number) => ({
+              id: `${orderId}-item-${index}`,
+              product_name: item.name || 'Unknown Product',
+              price: item.price || 0,
+              quantity: item.quantity || 1
+            }));
+          }
+        } catch (parseError) {
+          console.error('Error parsing shipping_address JSON:', parseError);
+        }
       }
 
-      const order = orders.find(o => o.id === orderId);
-      if (order) {
-        const orderWithItems = { ...order, items: data as OrderItem[] };
-        setSelectedOrder(orderWithItems);
-      }
+      const orderWithItems = { ...order, items: orderItems };
+      setSelectedOrder(orderWithItems);
     } catch (error) {
       console.error('Error fetching order details:', error);
       toast({

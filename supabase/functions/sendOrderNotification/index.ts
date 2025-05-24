@@ -49,6 +49,7 @@ serve(async (req) => {
 
   try {
     // Enable detailed logging if DEBUG_MODE is true
+    // @ts-ignore: Deno exists in Supabase Edge Functions environment
     const debugMode = Deno.env.get('DEBUG_MODE') === 'true';
     
     if (debugMode) {
@@ -92,27 +93,44 @@ serve(async (req) => {
     // Create SMTP client
     const client = new SmtpClient();
     
-    try {
-      if (debugMode) console.log('Connecting to SMTP server...');
-      
-      // Connect to Gmail's SMTP server with a timeout
-      await Promise.race([
-        client.connectTLS({
-          host: "smtp.gmail.com",
-          port: 465,
-          username: gmailUser,
-          password: gmailPass,
-        }),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('SMTP connection timeout')), 15000)
-        )
-      ]);
-      
-      if (debugMode) console.log('Successfully connected to SMTP server');
-    } catch (smtpError) {
-      console.error('SMTP connection error:', smtpError);
-      throw new Error(`Failed to connect to email server: ${smtpError.message}`);
-    }
+    // Function to attempt SMTP connection with retries
+    const connectWithRetry = async (retries = 3, delay = 2000) => {
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+          if (debugMode) console.log(`Connecting to SMTP server (attempt ${attempt}/${retries})...`);
+          
+          // Connect to Gmail's SMTP server with a timeout
+          await Promise.race([
+            client.connectTLS({
+              host: "smtp.gmail.com",
+              port: 465,
+              username: gmailUser,
+              password: gmailPass,
+            }),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('SMTP connection timeout')), 20000) // Increased timeout
+            )
+          ]);
+          
+          if (debugMode) console.log('Successfully connected to SMTP server');
+          return; // Connection successful, exit the function
+        } catch (smtpError) {
+          console.error(`SMTP connection error (attempt ${attempt}/${retries}):`, smtpError);
+          
+          if (attempt === retries) {
+            // Last attempt failed, throw the error
+            throw new Error(`Failed to connect to email server after ${retries} attempts: ${smtpError.message}`);
+          }
+          
+          // Wait before next retry
+          if (debugMode) console.log(`Waiting ${delay}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    };
+    
+    // Try to connect with retry logic
+    await connectWithRetry();
 
     // Format items list
     const itemsList = items.map((item: any) => 
@@ -193,7 +211,8 @@ serve(async (req) => {
       </html>
     `;
 
-    // Send email
+    // Send email to admin
+    if (debugMode) console.log('Sending order notification to admin...');
     await client.send({
       from: gmailUser,
       to: adminEmail,
@@ -201,6 +220,98 @@ serve(async (req) => {
       content: "New order notification",
       html: htmlBody,
     });
+    
+    // Also send a confirmation email to the customer if email is provided
+    if (email) {
+      if (debugMode) console.log('Sending order confirmation to customer...');
+      
+      // Create customer email content
+      const customerHtmlBody = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; }
+            .header { background-color: #f8f9fa; padding: 20px; text-align: center; border-bottom: 3px solid #28a745; }
+            .content { padding: 20px; }
+            .order-details { background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0; }
+            .items-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+            .items-table th, .items-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            .items-table th { background-color: #f2f2f2; }
+            .total-row { font-weight: bold; background-color: #f8f9fa; }
+            .footer { margin-top: 30px; font-size: 12px; color: #777; border-top: 1px solid #eee; padding-top: 15px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Order Confirmation</h1>
+            <p>Thank you for your order!</p>
+          </div>
+          
+          <div class="content">
+            <p>Dear ${customerName},</p>
+            <p>Thank you for your order with Natural Puff. We've received your order and it's being processed.</p>
+            
+            <div class="order-details">
+              <h2>Order Details:</h2>
+              <p><strong>Order ID:</strong> ${orderId}</p>
+              <p><strong>Date:</strong> ${formatDate(new Date())}</p>
+              <p><strong>Total Amount:</strong> ${formatCurrency(amount)}</p>
+            </div>
+            
+            ${items.length > 0 ? `
+              <h3>Your Order:</h3>
+              <table class="items-table">
+                <thead>
+                  <tr>
+                    <th>Product</th>
+                    <th>Quantity</th>
+                    <th>Unit Price</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${items.map((item: any) => `
+                    <tr>
+                      <td>${item.name}</td>
+                      <td>${item.quantity}</td>
+                      <td>${formatCurrency(item.price)}</td>
+                      <td>${formatCurrency(item.price * item.quantity)}</td>
+                    </tr>
+                  `).join('')}
+                  <tr class="total-row">
+                    <td colspan="3">Total</td>
+                    <td>${formatCurrency(amount)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            ` : '<p>No items in this order.</p>'}
+            
+            <p>We'll process your order as soon as possible. If you have any questions, please reply to this email.</p>
+            
+            <div class="footer">
+              <p>Thank you for shopping with Natural Puff!</p>
+              <p>© ${new Date().getFullYear()} Natural Puff. All rights reserved.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+      
+      try {
+        await client.send({
+          from: gmailUser,
+          to: email,
+          subject: `Your Natural Puff Order #${orderId} Confirmation`,
+          content: "Order confirmation",
+          html: customerHtmlBody,
+        });
+        if (debugMode) console.log('Customer confirmation email sent successfully');
+      } catch (customerEmailError) {
+        console.error('Failed to send customer confirmation email:', customerEmailError);
+        // Continue even if customer email fails - at least admin was notified
+      }
+    }
 
     // Close connection
     await client.close();
