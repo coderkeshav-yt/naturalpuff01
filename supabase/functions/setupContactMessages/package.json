@@ -1,0 +1,12 @@
+{
+  "name": "setup-contact-messages",
+  "version": "1.0.0",
+  "description": "Supabase Edge Function to set up contact messages table",
+  "main": "index.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["supabase", "edge-function", "contact-form"],
+  "author": "",
+  "license": "MIT"
+}

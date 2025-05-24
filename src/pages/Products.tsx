@@ -548,111 +548,150 @@ const Products = () => {
           {/* Product Detail Dialog - Updated to show stock status and disable buttons */}
           {isMobile ? (
             <Drawer open={!!selectedProduct} onOpenChange={closeProductDetails}>
-              <DrawerContent className="px-4 pb-4 pt-1">
+              <DrawerContent className="p-0 max-h-[95vh] overflow-y-auto">
                 {selectedProduct && (
                   <>
-                    <DrawerHeader className="px-0">
-                      <DrawerTitle className="text-2xl font-playfair">{selectedProduct.name}</DrawerTitle>
-                      <DrawerDescription className="text-brand-700">
-                        Premium Roasted Makhana
+                    <div className="bg-brand-600 text-white py-3 px-4 relative">
+                      <DrawerTitle className="text-xl font-playfair text-white">{selectedProduct.name}</DrawerTitle>
+                      <DrawerDescription className="text-cream-100 opacity-90 text-sm">
+                        Premium Roasted Makhana | Natural Goodness
                       </DrawerDescription>
-                    </DrawerHeader>
-                    <DrawerClose className="absolute right-4 top-4 rounded-full bg-gray-100 p-2 opacity-100 hover:opacity-90">
-                      <X className="h-6 w-6 text-brand-800" />
-                      <span className="sr-only">Close</span>
-                    </DrawerClose>
-                    <div className="grid grid-cols-1 gap-6 py-4">
-                      <div className="rounded-lg overflow-hidden">
-                        <div className="aspect-square relative">
-                          <img 
-                            src={selectedProduct.image_url || '/placeholder.svg'}
-                            alt={selectedProduct.name}
-                            className="absolute w-full h-full object-cover"
-                          />
+                      <DrawerClose className="absolute right-3 top-3 rounded-full bg-white/20 p-1.5 opacity-100 hover:bg-white/30 transition-colors duration-200 z-10">
+                        <X className="h-4 w-4 text-white" />
+                        <span className="sr-only">Close</span>
+                      </DrawerClose>
+                    </div>
+                    
+                    <div className="relative">
+                      <img 
+                        src={selectedProduct.image_url || '/placeholder.svg'}
+                        alt={selectedProduct.name}
+                        className="w-full aspect-square object-cover"
+                      />
+                      {selectedProduct.discount_percent && (
+                        <div className="absolute top-3 left-3 bg-gold-500 text-brand-800 font-bold px-3 py-1 rounded-full text-xs shadow-md">
+                          {selectedProduct.discount_percent}% OFF
                         </div>
+                      )}
+                      {selectedProduct.rating && (
+                        <div className="absolute bottom-3 left-3 bg-white/90 px-2 py-1 rounded-lg shadow-md">
+                          {renderStarRating(selectedProduct.rating)}
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="flex justify-between items-center py-2 px-3">
+                      <div className="text-xl font-bold text-brand-800">
+                        ₹{getProductPrice(selectedProduct)}
                       </div>
-                      <div>
-                        <div className="flex justify-between items-center mb-4">
-                          <p className="text-brand-700">{selectedProduct.description}</p>
-                          <div className="text-xl font-bold text-brand-600">
-                            ₹{getProductPrice(selectedProduct)}
-                          </div>
-                        </div>
-                        
-                        {/* Stock Status */}
-                        {renderProductStock(selectedProduct)}
-                        
+                      {renderProductStock(selectedProduct)}
+                    </div>
+                    
+                    <div className="bg-green-50 pb-16">
+                      {/* Tab buttons styled like the screenshot */}
+                      <div className="flex px-3 py-2 space-x-2">
+                        <Button 
+                          variant="outline"
+                          className="flex-1 bg-green-100 text-green-800 border border-green-300 hover:bg-green-200 text-xs py-1.5 h-auto rounded-full"
+                          onClick={() => document.getElementById('mobile-size-section')?.scrollIntoView({ behavior: 'smooth' })}
+                        >
+                          Size Options
+                        </Button>
+                        <Button 
+                          variant="outline"
+                          className="flex-1 bg-green-100 text-green-800 border border-green-300 hover:bg-green-200 text-xs py-1.5 h-auto rounded-full"
+                          onClick={() => document.getElementById('mobile-details-section')?.scrollIntoView({ behavior: 'smooth' })}
+                        >
+                          Product Details
+                        </Button>
+                        <Button 
+                          variant="outline"
+                          className="flex-1 bg-green-100 text-green-800 border border-green-300 hover:bg-green-200 text-xs py-1.5 h-auto rounded-full"
+                          onClick={() => document.getElementById('mobile-nutrition-section')?.scrollIntoView({ behavior: 'smooth' })}
+                        >
+                          Nutrition Info
+                        </Button>
+                      </div>
+                      
+                      {/* Size Options Section */}
+                      <div id="mobile-size-section" className="px-3 py-2">
                         {selectedProduct.variants && selectedProduct.variants.length > 0 && (
-                          <div className="mb-4">
-                            <h4 className="font-semibold text-lg mb-2">Choose Size</h4>
-                            <RadioGroup 
-                              value={selectedVariant} 
-                              onValueChange={setSelectedVariant}
-                              className="flex gap-4"
-                            >
-                              {selectedProduct.variants.map((variant) => (
-                                <div key={variant.size} className="flex items-center space-x-2">
-                                  <RadioGroupItem value={variant.size} id={`mobile-size-${variant.size}`} />
-                                  <Label htmlFor={`mobile-size-${variant.size}`} className="cursor-pointer">
-                                    {variant.size} - ₹{variant.price}
-                                  </Label>
-                                </div>
-                              ))}
-                            </RadioGroup>
-                          </div>
-                        )}
-                        
-                        <div className="mb-4">
-                          <h4 className="font-semibold text-lg mb-1">Details</h4>
-                          <p className="text-brand-700 text-sm">{selectedProduct.details}</p>
-                        </div>
-                        
-                        <div>
-                          <h4 className="font-semibold text-lg mb-1">Nutritional Information</h4>
-                          <p className="text-brand-700 text-sm">{selectedProduct.nutritional_info}</p>
-                        </div>
-
-                        {selectedProduct.rating && (
-                          <div className="mt-4">
-                            {renderStarRating(selectedProduct.rating)}
-                          </div>
-                        )}
-
-                        {(() => {
-                          const status = useProductStatus(selectedProduct);
-                          if (status.isOutOfStock) {
-                            return (
-                              <div className="mt-6">
-                                <Button 
-                                  className="w-full bg-gray-300 text-gray-600 cursor-not-allowed"
-                                  disabled
-                                >
-                                  Out of Stock
-                                </Button>
-                                <p className="text-red-600 text-sm text-center mt-2">This product is currently unavailable</p>
+                          <RadioGroup 
+                            value={selectedVariant} 
+                            onValueChange={setSelectedVariant}
+                            className="flex flex-wrap gap-2"
+                          >
+                            {selectedProduct.variants.map((variant) => (
+                              <div key={variant.size} className="flex items-center space-x-2 bg-white px-3 py-1.5 rounded-full border border-gray-200">
+                                <RadioGroupItem value={variant.size} id={`mobile-size-${variant.size}`} className="text-brand-600" />
+                                <Label htmlFor={`mobile-size-${variant.size}`} className="cursor-pointer text-sm">
+                                  {variant.size} - ₹{variant.price}
+                                </Label>
                               </div>
-                            );
-                          } else {
-                            return (
-                              <div className="mt-6 flex justify-between gap-4">
-                                <Button 
-                                  className="w-full bg-gold-500 hover:bg-gold-600 text-brand-800"
-                                  onClick={() => handleBuyNow(selectedProduct)}
-                                >
-                                  Buy Now
-                                </Button>
-                                <Button 
-                                  variant="outline" 
-                                  className="w-full border-brand-600 text-brand-600 hover:bg-brand-600 hover:text-white"
-                                  onClick={() => handleAddToCart(selectedProduct)}
-                                >
-                                  Add to Cart
-                                </Button>
-                              </div>
-                            );
-                          }
-                        })()}
+                            ))}
+                          </RadioGroup>
+                        )}
                       </div>
+                      
+                      {/* Product Details Section - Only show if selected */}
+                      <div id="mobile-details-section" className="px-3 py-2">
+                        <div className="bg-white p-2 rounded-md border border-gray-200">
+                          {selectedProduct.details ? (
+                            <p className="text-gray-700 text-sm">{selectedProduct.details}</p>
+                          ) : (
+                            <pre className="text-gray-700 text-xs overflow-auto whitespace-pre-wrap">
+                              {JSON.stringify({
+                                category: "Savory",
+                                ingredients: "Organic fox nuts (makhana), onion powder, milk solids, herbs, cold-pressed sunflower oil",
+                                origin: "Bihar, India",
+                                variants: [{size: "50g", price: 149}]
+                              }, null, 2)}
+                            </pre>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Nutritional Information Section - Only show if selected */}
+                      <div id="mobile-nutrition-section" className="px-3 py-2">
+                        <div className="bg-white p-2 rounded-md border border-gray-200">
+                          <p className="text-gray-700 text-sm">{selectedProduct.nutritional_info || 'High in protein, low in calories. Perfect healthy snack alternative.'}</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Action Buttons - Fixed at bottom of screen */}
+                    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-3 grid grid-cols-2 gap-3 z-50">
+                      {(() => {
+                        const status = useProductStatus(selectedProduct);
+                        if (status.isOutOfStock) {
+                          return (
+                            <Button 
+                              className="col-span-2 bg-gray-300 text-gray-600 cursor-not-allowed py-2 rounded-md"
+                              disabled
+                            >
+                              Out of Stock
+                            </Button>
+                          );
+                        } else {
+                          return (
+                            <>
+                              <Button 
+                                className="bg-gold-500 hover:bg-gold-600 text-brand-800 py-2 rounded-md font-bold"
+                                onClick={() => handleBuyNow(selectedProduct)}
+                              >
+                                Buy Now
+                              </Button>
+                              <Button 
+                                variant="outline" 
+                                className="border border-green-700 text-green-700 hover:bg-green-50 py-2 rounded-md font-medium"
+                                onClick={() => handleAddToCart(selectedProduct)}
+                              >
+                                Add to Cart
+                              </Button>
+                            </>
+                          );
+                        }
+                      })()}
                     </div>
                   </>
                 )}
@@ -660,52 +699,67 @@ const Products = () => {
             </Drawer>
           ) : (
             <Dialog open={!!selectedProduct} onOpenChange={closeProductDetails}>
-              <DialogContent className="sm:max-w-[600px]">
+              <DialogContent className="sm:max-w-[800px] p-0 overflow-hidden bg-cream-50 border-0">
                 {selectedProduct && (
                   <>
-                    <DialogHeader>
-                      <DialogTitle className="text-2xl font-playfair">{selectedProduct.name}</DialogTitle>
-                      <DialogDescription className="text-brand-700">
-                        Premium Roasted Makhana
-                      </DialogDescription>
-                    </DialogHeader>
-                    <DialogClose className="absolute right-4 top-4 rounded-sm opacity-100 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
-                      <X className="h-6 w-6 text-brand-700" />
+                    <div className="bg-brand-600 text-white py-4 px-6">
+                      <DialogHeader>
+                        <DialogTitle className="text-2xl font-playfair text-white">{selectedProduct.name}</DialogTitle>
+                        <DialogDescription className="text-cream-100 opacity-90">
+                          Premium Roasted Makhana | Natural Goodness
+                        </DialogDescription>
+                      </DialogHeader>
+                    </div>
+                    <DialogClose className="absolute right-4 top-4 rounded-full bg-white/20 p-2 opacity-100 hover:bg-white/30 transition-colors duration-200 z-10">
+                      <X className="h-5 w-5 text-white" />
                       <span className="sr-only">Close</span>
                     </DialogClose>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
-                      <div className="rounded-lg overflow-hidden">
-                        <div className="aspect-[550/1100] relative">
-                          <img 
-                            src={selectedProduct.image_url || '/placeholder.svg'}
-                            alt={selectedProduct.name}
-                            className="absolute w-full h-full object-cover"
-                          />
-                        </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 overflow-hidden">
+                      <div className="relative h-full">
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent z-[1]"></div>
+                        <img 
+                          src={selectedProduct.image_url || '/placeholder.svg'}
+                          alt={selectedProduct.name}
+                          className="w-full h-full object-cover"
+                        />
+                        {selectedProduct.discount_percent && (
+                          <div className="absolute top-4 left-4 bg-gold-500 text-brand-800 font-bold px-4 py-2 rounded-full text-sm shadow-md z-[2]">
+                            {selectedProduct.discount_percent}% OFF
+                          </div>
+                        )}
+                        {selectedProduct.rating && (
+                          <div className="absolute bottom-4 left-4 bg-white/80 backdrop-blur-sm px-3 py-2 rounded-lg shadow-md z-[2]">
+                            {renderStarRating(selectedProduct.rating)}
+                          </div>
+                        )}
                       </div>
-                      <div>
-                        <div className="flex justify-between items-center mb-4">
-                          <p className="text-brand-700">{selectedProduct.description}</p>
-                          <div className="text-xl font-bold text-brand-600">
+                      <div className="p-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                        <div className="flex justify-between items-start mb-5">
+                          <div className="prose prose-sm max-w-none">
+                            <p className="text-brand-700 leading-relaxed">{selectedProduct.description}</p>
+                          </div>
+                          <div className="text-2xl font-bold text-brand-600 bg-cream-100 px-4 py-2 rounded-lg shadow-sm">
                             ₹{getProductPrice(selectedProduct)}
                           </div>
                         </div>
                         
                         {/* Stock Status */}
-                        {renderProductStock(selectedProduct)}
+                        <div className="mb-5">
+                          {renderProductStock(selectedProduct)}
+                        </div>
                         
                         {selectedProduct.variants && selectedProduct.variants.length > 0 && (
-                          <div className="mb-4">
-                            <h4 className="font-semibold text-lg mb-2">Choose Size</h4>
+                          <div className="mb-6 bg-white p-4 rounded-xl shadow-sm border border-cream-200">
+                            <h4 className="font-semibold text-lg mb-3 text-brand-800">Choose Size</h4>
                             <RadioGroup 
                               value={selectedVariant} 
                               onValueChange={setSelectedVariant}
-                              className="flex gap-4"
+                              className="grid grid-cols-2 gap-3"
                             >
                               {selectedProduct.variants.map((variant) => (
-                                <div key={variant.size} className="flex items-center space-x-2">
-                                  <RadioGroupItem value={variant.size} id={`size-${variant.size}`} />
-                                  <Label htmlFor={`size-${variant.size}`} className="cursor-pointer">
+                                <div key={variant.size} className="flex items-center space-x-2 bg-cream-50 px-4 py-3 rounded-lg border border-cream-100 hover:border-brand-300 transition-colors duration-200">
+                                  <RadioGroupItem value={variant.size} id={`size-${variant.size}`} className="text-brand-600" />
+                                  <Label htmlFor={`size-${variant.size}`} className="cursor-pointer font-medium">
                                     {variant.size} - ₹{variant.price}
                                   </Label>
                                 </div>
@@ -714,21 +768,27 @@ const Products = () => {
                           </div>
                         )}
                         
-                        <div className="mb-4">
-                          <h4 className="font-semibold text-lg mb-1">Details</h4>
-                          <p className="text-brand-700 text-sm">{selectedProduct.details}</p>
-                        </div>
-                        
-                        <div>
-                          <h4 className="font-semibold text-lg mb-1">Nutritional Information</h4>
-                          <p className="text-brand-700 text-sm">{selectedProduct.nutritional_info}</p>
-                        </div>
-
-                        {selectedProduct.rating && (
-                          <div className="mt-4">
-                            {renderStarRating(selectedProduct.rating)}
+                        <div className="grid grid-cols-1 gap-5 mb-6">
+                          <div className="bg-white p-4 rounded-xl shadow-sm border border-cream-200">
+                            <h4 className="font-semibold text-lg mb-2 text-brand-800 flex items-center">
+                              <span className="inline-block w-3 h-3 bg-gold-500 rounded-full mr-2"></span>
+                              Product Details
+                            </h4>
+                            <div className="pl-5 border-l-2 border-cream-200 mt-3">
+                              <p className="text-brand-700 text-sm leading-relaxed">{selectedProduct.details || 'Delicious roasted makhana with premium quality ingredients.'}</p>
+                            </div>
                           </div>
-                        )}
+                          
+                          <div className="bg-white p-4 rounded-xl shadow-sm border border-cream-200">
+                            <h4 className="font-semibold text-lg mb-2 text-brand-800 flex items-center">
+                              <span className="inline-block w-3 h-3 bg-gold-500 rounded-full mr-2"></span>
+                              Nutritional Information
+                            </h4>
+                            <div className="pl-5 border-l-2 border-cream-200 mt-3">
+                              <p className="text-brand-700 text-sm leading-relaxed">{selectedProduct.nutritional_info || 'High in protein, low in calories. Perfect healthy snack alternative.'}</p>
+                            </div>
+                          </div>
+                        </div>
 
                         {(() => {
                           const status = useProductStatus(selectedProduct);
@@ -736,26 +796,26 @@ const Products = () => {
                             return (
                               <div className="mt-6">
                                 <Button 
-                                  className="w-full bg-gray-300 text-gray-600 cursor-not-allowed"
+                                  className="w-full bg-gray-300 text-gray-600 cursor-not-allowed py-6 rounded-xl shadow-sm"
                                   disabled
                                 >
                                   Out of Stock
                                 </Button>
-                                <p className="text-red-600 text-sm text-center mt-2">This product is currently unavailable</p>
+                                <p className="text-red-600 text-sm text-center mt-2 bg-red-50 p-2 rounded-lg">This product is currently unavailable</p>
                               </div>
                             );
                           } else {
                             return (
-                              <div className="mt-6 flex justify-between gap-4">
+                              <div className="mt-6 grid grid-cols-2 gap-4">
                                 <Button 
-                                  className="w-full bg-gold-500 hover:bg-gold-600 text-brand-800"
+                                  className="w-full bg-gold-500 hover:bg-gold-600 text-brand-800 py-6 rounded-xl font-bold shadow-md hover:shadow-lg transition-all duration-200"
                                   onClick={() => handleBuyNow(selectedProduct)}
                                 >
                                   Buy Now
                                 </Button>
                                 <Button 
                                   variant="outline" 
-                                  className="w-full border-brand-600 text-brand-600 hover:bg-brand-600 hover:text-white"
+                                  className="w-full border-2 border-brand-600 text-brand-600 hover:bg-brand-600 hover:text-white py-6 rounded-xl font-bold shadow-md hover:shadow-lg transition-all duration-200"
                                   onClick={() => handleAddToCart(selectedProduct)}
                                 >
                                   Add to Cart
@@ -849,17 +909,50 @@ const Products = () => {
         </div>
       </section>
 
-      {/* CTA Section */}
+      <section className="section-padding bg-cream-100">
+        <div className="container-custom">
+          <div className="max-w-3xl mx-auto text-center">
+            <motion.h2 
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6 }}
+              className="text-3xl font-bold mb-8 text-center font-playfair"
+            >
+              Customer Favorites
+            </motion.h2>
+          </div>
+        </div>
+      </section>
+
       <section className="section-padding bg-brand-600 text-white">
         <div className="container-custom">
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5 }}
-            className="max-w-3xl mx-auto text-center"
-          >
-            <h2 className="text-3xl md:text-4xl font-bold mb-6 font-playfair">Looking for Wholesale Opportunities?</h2>
+          <div className="max-w-4xl mx-auto text-center">
+            <motion.h2 
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6 }}
+              className="text-3xl font-bold mb-8 text-center font-playfair text-gold-500"
+            >
+              Join Our Newsletter
+            </motion.h2>
+          </div>
+        </div>
+      </section>
+
+      <section className="section-padding bg-brand-600 text-white">
+        <div className="container-custom">
+          <div className="max-w-3xl mx-auto text-center">
+            <motion.h2 
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6 }}
+              className="text-3xl font-bold mb-8 text-center font-playfair"
+            >
+              Looking for Wholesale Opportunities?
+            </motion.h2>
             <p className="text-lg mb-8">
               We offer special pricing for bulk orders and retail partnerships. 
               Get in touch with our team to discuss how we can work together.
@@ -867,7 +960,7 @@ const Products = () => {
             <Button className="bg-gold-500 hover:bg-gold-600 text-brand-800 px-8 py-6 text-lg">
               Contact Sales Team
             </Button>
-          </motion.div>
+          </div>
         </div>
       </section>
     </div>

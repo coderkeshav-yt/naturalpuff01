@@ -5,12 +5,15 @@ export interface Product {
   description: string;
   price: number;
   image_url: string;
-  stock: number;
+  stock?: number;
   category?: string;
   nutritional_info?: string;
   details?: string;
   created_at?: string;
   updated_at?: string;
+  variants?: ProductVariant[];
+  discount_percent?: number;
+  rating?: number;
 }
 
 export interface DatabaseProduct {

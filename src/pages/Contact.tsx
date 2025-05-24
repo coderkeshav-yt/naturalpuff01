@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 const Contact = () => {
   const { toast } = useToast();
@@ -23,28 +24,79 @@ const Contact = () => {
     }));
   };
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsSubmitting(true);
     
-    // TODO: Connect to Supabase to store message
-    console.log('Form submission:', formData);
-    
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      // Use direct fetch API to insert the contact message
+      console.log('Submitting contact form with data:', {
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone || null,
+        subject: formData.subject,
+        message: formData.message
+      });
+
+      // Define the Supabase URL and anon key
+      const SUPABASE_URL = 'https://nmpaafoonvivsdxcbaoe.supabase.co';
+      const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5tcGFhZm9vbnZpdnNkeGNiYW9lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU4OTYzOTcsImV4cCI6MjA2MTQ3MjM5N30.iAB0e2wl-TwGlFcE8gqCTgyUxFj7i9HSKv-bKMod8nU';
+
+      // Use fetch API to directly call the Supabase REST API
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/contact_messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone || null,
+          subject: formData.subject,
+          message: formData.message,
+          created_at: new Date().toISOString()
+        })
+      });
+
+      console.log('Response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error response:', errorText);
+        toast({
+          title: "Error Sending Message",
+          description: "There was a problem sending your message. Please try again later.",
+          variant: "destructive"
+        });
+      } else {
+        // If we get here, the message was sent successfully
+        toast({
+          title: "Message Sent!",
+          description: "Thank you for reaching out. We'll get back to you soon.",
+        });
+        
+        // Reset form after successful submission
+        setFormData({
+          name: '',
+          email: '',
+          phone: '',
+          subject: '',
+          message: ''
+        });
+      }
+    } catch (error) {
+      console.error('Exception submitting contact form:', error);
       toast({
-        title: "Message Sent!",
-        description: "Thank you for reaching out. We'll get back to you soon.",
+        title: "Error Sending Message",
+        description: "There was a problem sending your message. Please try again later.",
+        variant: "destructive"
       });
-      setFormData({
-        name: '',
-        email: '',
-        phone: '',
-        subject: '',
-        message: ''
-      });
+    } finally {
       setIsSubmitting(false);
-    }, 1500);
+    }
   };
 
   return (
