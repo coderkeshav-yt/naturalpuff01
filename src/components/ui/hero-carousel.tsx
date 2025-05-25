@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Link } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
-import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel";
+import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious, type CarouselApi } from "@/components/ui/carousel";
 import { Card, CardContent } from "@/components/ui/card";
 import { motion } from 'framer-motion';
 
@@ -20,6 +20,9 @@ export function HeroCarousel() {
   const [carouselItems, setCarouselItems] = useState<CarouselItemType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [api, setApi] = useState<CarouselApi | null>(null);
+  const [current, setCurrent] = useState(0);
+  const autoSlideInterval = 7000; // 7 seconds in milliseconds
 
   const fetchCarouselItems = async () => {
     try {
@@ -65,6 +68,19 @@ export function HeroCarousel() {
     fetchCarouselItems();
   }, []);
 
+  // Set up auto-sliding functionality
+  useEffect(() => {
+    if (!api || carouselItems.length <= 1) return;
+    
+    // Set up auto-sliding timer
+    const autoplayTimer = setInterval(() => {
+      api.scrollNext();
+    }, autoSlideInterval);
+    
+    // Clean up the timer when component unmounts
+    return () => clearInterval(autoplayTimer);
+  }, [api, carouselItems.length]);
+
   if (loading) {
     return <div className="py-10 text-center">Loading carousel...</div>;
   }
@@ -80,7 +96,7 @@ export function HeroCarousel() {
   return (
     <section className="bg-cream-50 py-6">
       <div className="container-custom">
-        <Carousel className="w-full">
+        <Carousel className="w-full" setApi={setApi}>
           <CarouselContent>
             {carouselItems.map((item) => (
               <CarouselItem key={item.id} className="md:basis-1/1 lg:basis-1/1">

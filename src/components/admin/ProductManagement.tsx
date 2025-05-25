@@ -117,6 +117,35 @@ const ProductManagement = () => {
   const handleSaveProduct = async (product: Product) => {
     setIsSubmitting(true);
     try {
+      // Auto mark as out of stock if stock is 0
+      if (product.stock === 0) {
+        // Parse details to add or update out_of_stock flag
+        let details = {};
+        if (product.details) {
+          try {
+            details = JSON.parse(product.details);
+          } catch (e) {
+            console.error('Error parsing product details:', e);
+          }
+        }
+        // Set out_of_stock flag to true
+        details = { ...details, out_of_stock: true };
+        product.details = JSON.stringify(details);
+      } else if (product.stock && product.stock > 0) {
+        // If stock is greater than 0, ensure out_of_stock is false
+        let details = {};
+        if (product.details) {
+          try {
+            details = JSON.parse(product.details);
+          } catch (e) {
+            console.error('Error parsing product details:', e);
+          }
+        }
+        // Set out_of_stock flag to false
+        details = { ...details, out_of_stock: false };
+        product.details = JSON.stringify(details);
+      }
+      
       // Skip name uniqueness check when editing stock or other fields
       // We'll only do the check if we're creating a new product or explicitly changing the name
       
