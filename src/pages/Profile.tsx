@@ -452,29 +452,29 @@ const Profile = () => {
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <p className="text-sm text-gray-500">Email</p>
-                          <p className="font-medium">{user.email}</p>
+                          <p className="font-medium">{user?.email || '—'}</p>
                         </div>
                         <div>
                           <p className="text-sm text-gray-500">Phone</p>
-                          <p className="font-medium">{userProfile?.phone || '—'}</p>
+                          <p className="font-medium">{userProfile?.phone || user?.user_metadata?.phone || user?.user_metadata?.phoneNumber || '—'}</p>
                         </div>
                         <div>
                           <p className="text-sm text-gray-500">First Name</p>
-                          <p className="font-medium">{userProfile?.first_name || '—'}</p>
+                          <p className="font-medium">{userProfile?.first_name || user?.user_metadata?.first_name || user?.user_metadata?.firstName || '—'}</p>
                         </div>
                         <div>
                           <p className="text-sm text-gray-500">Last Name</p>
-                          <p className="font-medium">{userProfile?.last_name || '—'}</p>
+                          <p className="font-medium">{userProfile?.last_name || user?.user_metadata?.last_name || user?.user_metadata?.lastName || '—'}</p>
                         </div>
                       </div>
                       
                       <div>
                         <p className="text-sm text-gray-500">Address</p>
                         <p className="font-medium">
-                          {userProfile?.address ? (
+                          {(userProfile?.address || user?.user_metadata?.address) ? (
                             <>
-                              {userProfile.address}<br />
-                              {userProfile.city}, {userProfile.state} - {userProfile.pincode}
+                              {userProfile?.address || user?.user_metadata?.address}<br />
+                              {userProfile?.city || user?.user_metadata?.city}, {userProfile?.state || user?.user_metadata?.state} - {userProfile?.pincode || user?.user_metadata?.pincode}
                             </>
                           ) : (
                             '—'

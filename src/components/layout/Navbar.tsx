@@ -42,9 +42,10 @@ const Navbar = () => {
   const handleSignOut = async () => {
     try {
       await signOut();
-      navigate('/');
-    } catch (error: any) {
-      console.error("Sign out error:", error);
+    } catch (error) {
+      console.error('Error signing out:', error);
+      // Force redirect to home page even if there's an error
+      window.location.href = '/';
     }
   };
 

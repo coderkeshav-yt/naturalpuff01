@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/components/ui/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -24,6 +25,10 @@ const signupSchema = z.object({
   lastName: z.string().min(2, { message: 'Last name must be at least 2 characters.' }),
   email: z.string().email({ message: 'Please enter a valid email address.' }),
   phone: z.string().min(10, { message: 'Phone number must be at least 10 digits.' }),
+  address: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  pincode: z.string().optional(),
   password: z.string().min(6, { message: 'Password must be at least 6 characters.' }),
   confirmPassword: z.string(),
 }).refine((data) => data.password === data.confirmPassword, {
@@ -47,6 +52,10 @@ const Signup = () => {
       lastName: '',
       email: '',
       phone: '',
+      address: '',
+      city: '',
+      state: '',
+      pincode: '',
       password: '',
       confirmPassword: '',
     },
@@ -57,12 +66,59 @@ const Signup = () => {
     console.log('Signup form submitted with values:', values);
     
     try {
-      // First, sign up the user with auth and include all profile data in metadata
-      await signUp(values.email, values.password, {
+      // Prepare user metadata with both naming conventions for maximum compatibility
+      const userMetadata = {
+        // Snake case (for database compatibility)
         first_name: values.firstName,
         last_name: values.lastName,
         phone: values.phone,
-      });
+        address: values.address,
+        city: values.city,
+        state: values.state,
+        pincode: values.pincode,
+        // Camel case (for JavaScript compatibility)
+        firstName: values.firstName,
+        lastName: values.lastName,
+        phoneNumber: values.phone,
+        // Include email in metadata for completeness
+        email: values.email,
+      };
+      
+      console.log('Signing up with metadata:', userMetadata);
+      
+      // First, sign up the user with auth and include all profile data in metadata
+      const { data, error } = await signUp(values.email, values.password, userMetadata);
+      
+      if (error) throw error;
+      
+      // If signup was successful and we have a user ID, create a profile record directly
+      if (data && data.user) {
+        console.log('Creating profile record for new user:', data.user.id);
+        
+        // Create profile record in the profiles table
+        // Note: The profiles table doesn't have an email field according to the schema,
+        // so we'll only include fields that match the table structure
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert({
+            id: data.user.id,
+            first_name: values.firstName,
+            last_name: values.lastName,
+            phone: values.phone,
+            address: values.address,
+            city: values.city,
+            state: values.state,
+            pincode: values.pincode,
+          });
+          
+        if (profileError) {
+          console.error('Error creating profile record:', profileError);
+          // Even if there's an error with the profile, we can still proceed since the auth record was created
+          // and the metadata contains all the user information
+        } else {
+          console.log('Profile record created successfully');
+        }
+      }
       
       console.log('User signed up successfully with metadata');
       
@@ -155,6 +211,64 @@ const Signup = () => {
                       </FormItem>
                     )}
                   />
+
+                  <FormField
+                    control={form.control}
+                    name="address"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Address</FormLabel>
+                        <FormControl>
+                          <Input placeholder="123 Main St" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="grid grid-cols-3 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="city"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>City</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Mumbai" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="state"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>State</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Maharashtra" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="pincode"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Pincode</FormLabel>
+                          <FormControl>
+                            <Input placeholder="400001" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
 
                   <FormField
                     control={form.control}

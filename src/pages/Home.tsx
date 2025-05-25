@@ -152,8 +152,8 @@ const Home = () => {
     "https://res.cloudinary.com/dlvxjnycr/image/upload/v1745910077/4_rrgvey.jpg",
     "https://res.cloudinary.com/dlvxjnycr/image/upload/v1745910080/5_tdxi1b.jpg",
     "https://res.cloudinary.com/dlvxjnycr/image/upload/v1745910077/1_hgavbu.jpg",
-    "https://res.cloudinary.com/dlvxjnycr/image/upload/v1746023952/makhana_1_cj3w29.jpg",
-    "https://res.cloudinary.com/dlvxjnycr/image/upload/v1746023952/makhana_2_iw8vre.jpg"
+    "https://res.cloudinary.com/dlvxjnycr/image/upload/v1745910076/3_klm4om.jpg",
+    "https://res.cloudinary.com/dlvxjnycr/image/upload/v1745910077/4_rrgvey.jpg"
   ];
 
   // Animated gradient backgrounds
@@ -209,6 +209,7 @@ const Home = () => {
   const heroImage = "https://res.cloudinary.com/dlvxjnycr/image/upload/v1745910077/4_rrgvey.jpg";
   const aboutImage = "https://res.cloudinary.com/dlvxjnycr/image/upload/v1745910080/5_tdxi1b.jpg";
   const healthImage = "https://res.cloudinary.com/dlvxjnycr/image/upload/v1745910077/1_hgavbu.jpg";
+ 
 
   return (
     <div>
@@ -301,7 +302,7 @@ const Home = () => {
                 <ul className="flex flex-wrap items-center gap-6">
                   <li className="flex items-center text-brand-700">
                     <CheckCircle className="w-5 h-5 mr-2 text-brand-600" />
-                    <span>100% Natural</span>
+
                   </li>
                   <li className="flex items-center text-brand-700">
                     <CheckCircle className="w-5 h-5 mr-2 text-brand-600" />
@@ -330,32 +331,9 @@ const Home = () => {
                   </div>
                 </div>
                 
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.8, duration: 0.8 }}
-                  className="absolute top-5 -left-8 bg-white/90 backdrop-blur py-2 px-4 rounded-full shadow-lg"
-                >
-                  <div className="flex items-center">
-                    <div className="flex">
-                      {[...Array(5)].map((_, i) => (
-                        <Star key={i} className="w-4 h-4 fill-gold-500 text-gold-500" />
-                      ))}
-                    </div>
-                    <span className="ml-2 text-sm font-medium">
-                      200+ Reviews
-                    </span>
-                  </div>
-                </motion.div>
+
                 
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 1, duration: 0.8 }}
-                  className="absolute -bottom-5 -right-5 bg-white/90 backdrop-blur py-2 px-4 rounded-full shadow-lg"
-                >
-                  <span className="text-brand-800 font-medium">100% Natural</span>
-                </motion.div>
+
               </div>
             </motion.div>
           </div>

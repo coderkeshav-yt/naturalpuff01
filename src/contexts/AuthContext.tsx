@@ -15,13 +15,15 @@ interface UserProfile {
   state: string | null;
   pincode: string | null;
   email?: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   isLoading: boolean;
-  signUp: (email: string, password: string, metadata?: any) => Promise<void>;
+  signUp: (email: string, password: string, metadata?: any) => Promise<any>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   isAdmin: boolean;
@@ -45,6 +47,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Function to fetch user profile data
   const fetchProfile = async (userId: string) => {
     try {
+      // Log the current user metadata for debugging
+      console.log('Current user metadata:', user?.user_metadata);
+      
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -57,15 +62,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (data) {
-        // Add the email from the user object
+        console.log('Profile data fetched from database:', data);
+        
+        // Combine data from profiles table with user metadata for completeness
         setUserProfile({
-          ...data,
+          id: data.id,
+          // For each field, prefer the database value but fall back to metadata if needed
+          first_name: data.first_name || user?.user_metadata?.first_name || user?.user_metadata?.firstName || null,
+          last_name: data.last_name || user?.user_metadata?.last_name || user?.user_metadata?.lastName || null,
+          phone: data.phone || user?.user_metadata?.phone || user?.user_metadata?.phoneNumber || null,
+          address: data.address || user?.user_metadata?.address || null,
+          city: data.city || user?.user_metadata?.city || null,
+          state: data.state || user?.user_metadata?.state || null,
+          pincode: data.pincode || user?.user_metadata?.pincode || null,
           email: user?.email
         });
-        console.log('Profile data fetched:', data);
       } else {
-        console.log('No profile found, will create one');
-        // If no profile exists, create one
+        console.log('No profile found in database, will create one from user metadata');
+        // If no profile exists, create one from user metadata
         await createInitialProfile(userId);
       }
     } catch (error) {
@@ -79,12 +93,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log('Creating initial profile for user:', userId);
       console.log('User metadata:', user?.user_metadata);
       
+      // Extract all available metadata from the user object
+      // Check for both snake_case and camelCase versions of all fields
+      const metadata = user?.user_metadata || {};
+      
       const profileData = {
         id: userId,
-        first_name: user?.user_metadata?.first_name || null,
-        last_name: user?.user_metadata?.last_name || null,
-        phone: user?.user_metadata?.phone || null,
+        first_name: metadata.first_name || metadata.firstName || null,
+        last_name: metadata.last_name || metadata.lastName || null,
+        phone: metadata.phone || metadata.phoneNumber || null,
+        address: metadata.address || null,
+        city: metadata.city || null,
+        state: metadata.state || null,
+        pincode: metadata.pincode || null,
       };
+      
+      // Check if we have any actual data to save
+      const hasProfileData = Object.values(profileData).some(
+        (value, index) => index > 0 && value !== null && value !== ''
+      );
+      
+      if (!hasProfileData) {
+        console.warn('No profile data available in user metadata. Creating minimal profile.');
+      }
       
       console.log('Profile data being created:', profileData);
       
@@ -97,8 +128,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // After creating, fetch the profile
-      await fetchProfile(userId);
+      // Set the profile data directly to avoid an extra database call
+      setUserProfile({
+        ...profileData,
+        email: user?.email,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      
+      console.log('Profile created successfully');
     } catch (error) {
       console.error('Error creating initial profile:', error);
     }
@@ -191,20 +229,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signUp = async (email: string, password: string, metadata?: any) => {
     try {
       console.log('Signing up with metadata:', metadata);
-      const { error } = await supabase.auth.signUp({
+      
+      // Ensure metadata uses consistent field naming
+      const normalizedMetadata = {
+        first_name: metadata?.first_name || metadata?.firstName || '',
+        last_name: metadata?.last_name || metadata?.lastName || '',
+        phone: metadata?.phone || metadata?.phoneNumber || '',
+        address: metadata?.address || '',
+        city: metadata?.city || '',
+        state: metadata?.state || '',
+        pincode: metadata?.pincode || '',
+        // Also include camelCase versions for compatibility
+        firstName: metadata?.first_name || metadata?.firstName || '',
+        lastName: metadata?.last_name || metadata?.lastName || '',
+        phoneNumber: metadata?.phone || metadata?.phoneNumber || '',
+      };
+      
+      const response = await supabase.auth.signUp({
         email,
         password,
         options: {
-          data: metadata,
+          data: normalizedMetadata,
         },
       });
 
-      if (error) throw error;
+      if (response.error) throw response.error;
       
       toast({
         title: "Verification Email Sent",
         description: "Please check your email to verify your account.",
       });
+      
+      // Return the full response so the signup component can access the user data
+      return response;
     } catch (error: any) {
       toast({
         title: "Sign Up Error",
@@ -240,21 +297,81 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     try {
-      const { error } = await supabase.auth.signOut();
+      console.log('Signing out user and clearing all sessions...');
       
-      if (error) throw error;
+      // First reset all state
+      setUser(null);
+      setSession(null);
+      setUserProfile(null);
+      setIsAdmin(false);
       
+      // Manually clear localStorage items related to Supabase auth and cart data
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.includes('supabase') || key.includes('auth') || key.includes('sb-') || key === 'cart' || key === 'appliedCoupon')) {
+          console.log('Removing localStorage item:', key);
+          localStorage.removeItem(key);
+        }
+      }
+      
+      // Explicitly remove cart and coupon data
+      localStorage.removeItem('cart');
+      localStorage.removeItem('appliedCoupon');
+      
+      // Clear sessionStorage items related to Supabase
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const key = sessionStorage.key(i);
+        if (key && (key.includes('supabase') || key.includes('auth') || key.includes('sb-'))) {
+          console.log('Removing sessionStorage item:', key);
+          sessionStorage.removeItem(key);
+        }
+      }
+      
+      // Then call Supabase signOut with scope: 'global' to kill all sessions
+      const { error } = await supabase.auth.signOut({ scope: 'global' });
+      
+      if (error) {
+        console.error('Supabase signOut error:', error);
+        // Continue with logout process even if there's an error
+      }
+      
+      // Show success toast
       toast({
         title: "Signed Out",
         description: "You have been successfully logged out.",
       });
+      
+      // Use a more aggressive approach to clear the page state
+      setTimeout(() => {
+        // Force a complete page reload with cache clearing
+        window.location.href = '/?nocache=' + new Date().getTime();
+      }, 100);
     } catch (error: any) {
+      console.error('Error during sign out:', error);
+      
+      // Still reset state
+      setUser(null);
+      setSession(null);
+      setUserProfile(null);
+      setIsAdmin(false);
+      
+      // Clear storage anyway
+      localStorage.clear();
+      sessionStorage.clear();
+      
+      // Explicitly ensure cart and coupon data are removed
+      localStorage.removeItem('cart');
+      localStorage.removeItem('appliedCoupon');
+      
+      // Show error toast
       toast({
         title: "Sign Out Error",
         description: error.message || "An error occurred during sign out.",
         variant: "destructive",
       });
-      throw error;
+      
+      // Force redirect to home page even if there's an error
+      window.location.href = '/?nocache=' + new Date().getTime();
     }
   };
 
