@@ -191,9 +191,15 @@ const ProductManagement = () => {
         price: processedProduct.price,
         stock: processedProduct.stock,
         image_url: processedProduct.image_url,
-        details: processedProduct.details,
+        // Store image URLs in the details JSON since the image_urls column doesn't exist yet
+        details: JSON.stringify({
+          ...JSON.parse(processedProduct.details || '{}'),
+          image_urls: processedProduct.image_urls || [processedProduct.image_url]
+        }),
         nutritional_info: processedProduct.nutritional_info || ''
       };
+      
+      console.log('Saving product with image URLs in details:', dbProduct.details);
       
       // Creating a new product
       if (product.id === 0) {

@@ -4,7 +4,8 @@ export interface Product {
   name: string;
   description: string;
   price: number;
-  image_url: string;
+  image_url: string; // Main image URL
+  image_urls?: string[]; // Multiple image URLs
   stock?: number;
   category?: string;
   nutritional_info?: string;

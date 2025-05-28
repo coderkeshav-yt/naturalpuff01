@@ -14,7 +14,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { motion } from 'framer-motion';
-import { Search, Filter, Star, X, RefreshCw } from 'lucide-react';
+import { Search, Filter, Star, X, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import {
   DropdownMenu,
@@ -39,6 +39,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useProductStatus } from '@/hooks/use-product-status';
 import { RefreshDataButton } from '@/components/admin/RefreshDataButton';
+import { ProductImageCarousel } from '@/components/ui/product-image-carousel';
 
 interface Product {
   id: number;
@@ -46,6 +47,7 @@ interface Product {
   price: number;
   description: string;
   image_url: string;
+  image_urls?: string[];
   details: string;
   nutritional_info: string;
   stock?: number;
@@ -68,6 +70,7 @@ interface ProductFilterOptions {
 const Products = () => {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<string>('');
+  const [currentImageIndex, setCurrentImageIndex] = useState<number>(0);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -100,24 +103,60 @@ const Products = () => {
       }
 
       if (data) {
-        // Extract category from details field if it exists
+        console.log('Raw product data from database:', JSON.stringify(data, null, 2));
+        
+        // Transform products data
         const transformedProducts = data.map((product: any) => {
+          console.log('Processing product:', product.name);
+          console.log('Product details:', JSON.stringify(product.details, null, 2));
           let category = 'General';
+          let image_urls: string[] = [];
+          
           try {
-            if (product.details) {
-              const detailsObj = JSON.parse(product.details);
-              if (detailsObj.category) {
-                category = detailsObj.category;
+            // Parse the details JSON if it exists
+            const details = product.details ? JSON.parse(product.details) : {};
+            
+            // Get category from details or use default
+            if (details.category) {
+              category = details.category;
+            }
+            
+            // Get image URLs - check multiple possible locations
+            if (details.image_urls && Array.isArray(details.image_urls)) {
+              // If image_urls exists in details
+              image_urls = details.image_urls.filter((url: any) => url && typeof url === 'string');
+            } else if (product.image_url) {
+              // If single image_url exists on the product
+              image_urls = [product.image_url];
+            } else if (details.image_url) {
+              // If image_url exists in details
+              image_urls = [details.image_url];
+            }
+            
+            // If we have a main_image_index, use it to reorder the images
+            if (details.main_image_index !== undefined && image_urls.length > 1) {
+              const mainIndex = details.main_image_index;
+              if (mainIndex >= 0 && mainIndex < image_urls.length) {
+                const mainImage = image_urls.splice(mainIndex, 1)[0];
+                image_urls.unshift(mainImage);
               }
             }
+            
+            console.log(`Processed product ${product.name}:`, { 
+              imageCount: image_urls.length,
+              hasMainImage: details.main_image_index !== undefined,
+              originalImage: product.image_url 
+            });
+            
           } catch (e) {
-            console.error('Error parsing product details:', e);
+            console.error('Error processing product:', product.name, e);
           }
           
           // Add variants to all products
-          return {
+          const transformedProduct = {
             ...product,
             category,
+            image_urls, // Include extracted image_urls
             variants: [
               { size: "50g", price: product.price },
               { size: "100g", price: Math.round(product.price * 1.8) },
@@ -125,6 +164,15 @@ const Products = () => {
             rating: 4.5 + Math.random() * 0.5,
             discount_percent: Math.floor(Math.random() * 10) + 5,
           };
+          
+          console.log('Transformed product:', JSON.stringify({
+            name: transformedProduct.name,
+            image_url: transformedProduct.image_url,
+            image_urls: transformedProduct.image_urls,
+            details: transformedProduct.details
+          }, null, 2));
+          
+          return transformedProduct;
         });
         
         console.log('Fetched products:', transformedProducts);
@@ -146,7 +194,7 @@ const Products = () => {
 
   const openProductDetails = (product: Product) => {
     setSelectedProduct(product);
-    // Set default variant if product has variants
+    setCurrentImageIndex(0); // Reset image index when opening a new product
     if (product.variants && product.variants.length > 0) {
       setSelectedVariant(product.variants[0].size);
     }
@@ -505,12 +553,110 @@ const Products = () => {
                   transition={{ duration: 0.5, delay: index * 0.1 }}
                   className="bg-white rounded-lg overflow-hidden shadow-md hover:shadow-lg transition-shadow"
                 >
-                  <div className="h-64 overflow-hidden">
-                    <img 
-                      src={product.image_url || '/placeholder.svg'}
+                  <div className="h-64 overflow-hidden relative group">
+                    {/* Product image carousel */}
+                    <ProductImageCarousel 
+                      key={`${product.id}-${Date.now()}`}
+                      images={(() => {
+                        // Debug log the raw product data
+                        console.log('Product data:', {
+                          id: product.id,
+                          name: product.name,
+                          image_url: product.image_url,
+                          image_urls: product.image_urls,
+                          details: product.details
+                        });
+                        
+                        // Extract images from the product data
+                        const extractImages = (data: any): string[] => {
+                          if (!data) return [];
+                          
+                          // If data is a string, try to parse it as JSON
+                          if (typeof data === 'string') {
+                            try {
+                              data = JSON.parse(data);
+                            } catch (e) {
+                              console.error('Failed to parse data as JSON:', e);
+                              return [];
+                            }
+                          }
+                          
+                          // If data is an array, return it directly
+                          if (Array.isArray(data)) {
+                            return data.filter((url: any) => 
+                              url && typeof url === 'string' && url.trim() !== ''
+                            );
+                          }
+                          
+                          // If data is an object, look for image arrays in common properties
+                          if (typeof data === 'object' && data !== null) {
+                            // Check for direct image properties first
+                            if (data.image_url) {
+                              return [data.image_url];
+                            }
+                            
+                            // Check for array properties that might contain images
+                            const possibleImageArrays = [
+                              data.image_urls,
+                              data.images,
+                              data.imageURLs,
+                              data.Images,
+                              data.imageUrls
+                            ];
+                            
+                            for (const arr of possibleImageArrays) {
+                              if (Array.isArray(arr) && arr.length > 0) {
+                                const validUrls = arr.filter((url: any) => 
+                                  url && typeof url === 'string' && url.trim() !== ''
+                                );
+                                if (validUrls.length > 0) {
+                                  return validUrls;
+                                }
+                              }
+                            }
+                          }
+                          
+                          return [];
+                        };
+                        
+                        // Try different sources for images
+                        let images: string[] = [];
+                        
+                        // 1. Check image_urls array
+                        if (product.image_urls) {
+                          images = extractImages(product.image_urls);
+                        }
+                        
+                        // 2. Check single image_url
+                        if (images.length === 0 && product.image_url) {
+                          images = [product.image_url];
+                        }
+                        
+                        // 3. Check details object
+                        if (images.length === 0 && product.details) {
+                          images = extractImages(product.details);
+                        }
+                        
+                        // 4. If still no images, use a placeholder
+                        if (images.length === 0) {
+                          console.warn(`No valid images found for product: ${product.name}`);
+                          images = ['/placeholder-product.png'];
+                        } else {
+                          console.log(`Found ${images.length} images for product: ${product.name}`, images);
+                        }
+                        
+                        return images;
+                      })()}
                       alt={product.name}
-                      className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
+                      className="w-full h-full object-cover"
                     />
+                    
+                    {/* Discount badge */}
+                    {product.discount_percent && (
+                      <div className="absolute top-2 left-2 bg-gold-500 text-brand-800 font-bold px-2 py-1 rounded-full text-xs shadow-md">
+                        {product.discount_percent}% OFF
+                      </div>
+                    )}
                   </div>
                   <div className="p-6">
                     <div className="flex justify-between items-start mb-2">
@@ -563,10 +709,10 @@ const Products = () => {
                     </div>
                     
                     <div className="relative">
-                      <img 
-                        src={selectedProduct.image_url || '/placeholder.svg'}
+                      <ProductImageCarousel 
+                        images={selectedProduct.image_urls || [selectedProduct.image_url]} 
                         alt={selectedProduct.name}
-                        className="w-full aspect-square object-cover"
+                        className="w-full aspect-square"
                       />
                       {selectedProduct.discount_percent && (
                         <div className="absolute top-3 left-3 bg-gold-500 text-brand-800 font-bold px-3 py-1 rounded-full text-xs shadow-md">
@@ -600,13 +746,6 @@ const Products = () => {
                         <Button 
                           variant="outline"
                           className="flex-1 bg-green-100 text-green-800 border border-green-300 hover:bg-green-200 text-xs py-1.5 h-auto rounded-full"
-                          onClick={() => document.getElementById('mobile-details-section')?.scrollIntoView({ behavior: 'smooth' })}
-                        >
-                          Product Details
-                        </Button>
-                        <Button 
-                          variant="outline"
-                          className="flex-1 bg-green-100 text-green-800 border border-green-300 hover:bg-green-200 text-xs py-1.5 h-auto rounded-full"
                           onClick={() => document.getElementById('mobile-nutrition-section')?.scrollIntoView({ behavior: 'smooth' })}
                         >
                           Nutrition Info
@@ -633,25 +772,7 @@ const Products = () => {
                         )}
                       </div>
                       
-                      {/* Product Details Section - Only show if selected */}
-                      <div id="mobile-details-section" className="px-3 py-2">
-                        <div className="bg-white p-2 rounded-md border border-gray-200">
-                          {selectedProduct.details ? (
-                            <p className="text-gray-700 text-sm">{selectedProduct.details}</p>
-                          ) : (
-                            <pre className="text-gray-700 text-xs overflow-auto whitespace-pre-wrap">
-                              {JSON.stringify({
-                                category: "Savory",
-                                ingredients: "Organic fox nuts (makhana), onion powder, milk solids, herbs, cold-pressed sunflower oil",
-                                origin: "Bihar, India",
-                                variants: [{size: "50g", price: 149}]
-                              }, null, 2)}
-                            </pre>
-                          )}
-                        </div>
-                      </div>
-                      
-                      {/* Nutritional Information Section - Only show if selected */}
+
                       <div id="mobile-nutrition-section" className="px-3 py-2">
                         <div className="bg-white p-2 rounded-md border border-gray-200">
                           <p className="text-gray-700 text-sm">{selectedProduct.nutritional_info || 'High in protein, low in calories. Perfect healthy snack alternative.'}</p>
@@ -717,11 +838,87 @@ const Products = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 overflow-hidden">
                       <div className="relative h-full">
                         <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent z-[1]"></div>
-                        <img 
-                          src={selectedProduct.image_url || '/placeholder.svg'}
-                          alt={selectedProduct.name}
-                          className="w-full h-full object-cover"
-                        />
+                        
+                        {/* Custom Carousel Implementation */}
+                        <div className="relative w-full h-full">
+                          {/* Main Image */}
+                          {(() => {
+                            // Get image URLs from product
+                            const imageUrls = selectedProduct.image_urls || [selectedProduct.image_url];
+                            const currentImage = imageUrls[currentImageIndex] || selectedProduct.image_url;
+                            
+                            return (
+                              <img 
+                                src={currentImage} 
+                                alt={`${selectedProduct.name} - image ${currentImageIndex + 1}`}
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  e.currentTarget.src = 'https://via.placeholder.com/800x600?text=Image+Not+Found';
+                                }}
+                              />
+                            );
+                          })()}
+                          
+                          {/* Navigation Controls */}
+                          {(() => {
+                            const imageUrls = selectedProduct.image_urls || [selectedProduct.image_url];
+                            if (imageUrls.length > 1) {
+                              return (
+                                <>
+                                  {/* Previous Button */}
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/70 hover:bg-white/90 rounded-full h-10 w-10 p-2 shadow-md z-10"
+                                    onClick={() => {
+                                      const imageUrls = selectedProduct.image_urls || [selectedProduct.image_url];
+                                      setCurrentImageIndex(prev => 
+                                        prev === 0 ? imageUrls.length - 1 : prev - 1
+                                      );
+                                    }}
+                                  >
+                                    <ChevronLeft className="h-6 w-6 text-brand-800" />
+                                    <span className="sr-only">Previous image</span>
+                                  </Button>
+                                  
+                                  {/* Next Button */}
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/70 hover:bg-white/90 rounded-full h-10 w-10 p-2 shadow-md z-10"
+                                    onClick={() => {
+                                      const imageUrls = selectedProduct.image_urls || [selectedProduct.image_url];
+                                      setCurrentImageIndex(prev => 
+                                        prev === imageUrls.length - 1 ? 0 : prev + 1
+                                      );
+                                    }}
+                                  >
+                                    <ChevronRight className="h-6 w-6 text-brand-800" />
+                                    <span className="sr-only">Next image</span>
+                                  </Button>
+                                  
+                                  {/* Indicators */}
+                                  <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-1.5 z-10">
+                                    {imageUrls.map((_, index) => (
+                                      <button
+                                        key={index}
+                                        className={`h-2 rounded-full transition-all ${
+                                          index === currentImageIndex 
+                                            ? 'w-8 bg-white' 
+                                            : 'w-2 bg-white/60 hover:bg-white/80'
+                                        }`}
+                                        onClick={() => setCurrentImageIndex(index)}
+                                        aria-label={`Go to image ${index + 1}`}
+                                      />
+                                    ))}
+                                  </div>
+                                </>
+                              );
+                            }
+                            return null;
+                          })()}
+                        </div>
+                        
                         {selectedProduct.discount_percent && (
                           <div className="absolute top-4 left-4 bg-gold-500 text-brand-800 font-bold px-4 py-2 rounded-full text-sm shadow-md z-[2]">
                             {selectedProduct.discount_percent}% OFF
@@ -769,16 +966,6 @@ const Products = () => {
                         )}
                         
                         <div className="grid grid-cols-1 gap-5 mb-6">
-                          <div className="bg-white p-4 rounded-xl shadow-sm border border-cream-200">
-                            <h4 className="font-semibold text-lg mb-2 text-brand-800 flex items-center">
-                              <span className="inline-block w-3 h-3 bg-gold-500 rounded-full mr-2"></span>
-                              Product Details
-                            </h4>
-                            <div className="pl-5 border-l-2 border-cream-200 mt-3">
-                              <p className="text-brand-700 text-sm leading-relaxed">{selectedProduct.details || 'Delicious roasted makhana with premium quality ingredients.'}</p>
-                            </div>
-                          </div>
-                          
                           <div className="bg-white p-4 rounded-xl shadow-sm border border-cream-200">
                             <h4 className="font-semibold text-lg mb-2 text-brand-800 flex items-center">
                               <span className="inline-block w-3 h-3 bg-gold-500 rounded-full mr-2"></span>
