@@ -6,6 +6,8 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Truck } from 'lucide-react';
 import OrderPolicyError from '@/components/layout/OrderPolicyError';
 import CouponManagement from '@/components/admin/CouponManagement';
 import OrdersManagement from '@/components/admin/OrdersManagement';
@@ -168,6 +170,30 @@ const AdminDashboard = () => {
         
         <TabsContent value="overview">
           <DashboardOverview />
+          
+          <div className="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <Truck className="mr-2 h-5 w-5 text-brand-600" />
+                  Shiprocket Integration
+                </CardTitle>
+                <CardDescription>
+                  Manage shipping, track orders, and configure Shiprocket settings
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-500">
+                  Integrate with Shiprocket to automate your shipping workflow, generate labels, and provide tracking information to customers.
+                </p>
+              </CardContent>
+              <CardFooter>
+                <Button onClick={() => navigate('/dashboard/shiprocket')} className="w-full">
+                  Manage Shipping
+                </Button>
+              </CardFooter>
+            </Card>
+          </div>
         </TabsContent>
         
         <TabsContent value="products">

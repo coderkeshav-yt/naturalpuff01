@@ -18,6 +18,7 @@ import Payment from './pages/Payment';
 import ProcessPayment from './pages/ProcessPayment';
 import HealthBenefits from './pages/HealthBenefits';
 import AdminDashboard from './pages/AdminDashboard';
+import ShiprocketAdmin from './pages/admin/ShiprocketAdmin';
 import EventsOffers from './pages/EventsOffers';
 import AdminRoute from './components/auth/AdminRoute';
 import OrderSuccess from './pages/OrderSuccess';
@@ -50,6 +51,14 @@ function App() {
             element={
               <AdminRoute>
                 <AdminDashboard />
+              </AdminRoute>
+            } 
+          />
+          <Route 
+            path="dashboard/shiprocket" 
+            element={
+              <AdminRoute>
+                <ShiprocketAdmin />
               </AdminRoute>
             } 
           />

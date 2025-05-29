@@ -5,8 +5,8 @@ import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/components/ui/use-toast';
-import { supabase } from '@/integrations/supabase/client';
 import { Loader2, MapPin, AlertTriangle } from 'lucide-react';
+import { ShiprocketService } from '@/services/shiprocket';
 
 interface CourierOption {
   courier_name: string;
@@ -69,55 +69,29 @@ const ShiprocketServiceabilityChecker = ({
     setShippingCost(0);
 
     try {
-      // Mock data for serviceability check 
-      // Normally this would be a call to ShipRocket API via edge function
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API delay
+      // Call the Shiprocket API via our service
+      const courierOptions = await ShiprocketService.checkServiceability({
+        pickup_pincode: '110001', // Default pickup pincode (warehouse)
+        delivery_pincode: pincode,
+        weight: 0.5, // Default weight in kg
+        cod: false // Cash on delivery option
+      });
       
-      // Generate mock data based on pincode
-      const lastDigit = parseInt(pincode.slice(-1), 10);
-      
-      if (lastDigit > 7) {
-        // For pincodes ending with 8 or 9, simulate non-serviceable area
-        setCourierOptions([]);
+      if (courierOptions.length === 0) {
+        // No courier options available for this pincode
+        setLocalCourierOptions([]);
+        if (setCourierOptions) {
+          setCourierOptions([]);
+        }
         setIsServiceable(false);
       } else {
-        // Generate 2-3 courier options with different rates
-        const mockCouriers: CourierOption[] = [
-          {
-            courier_name: "Ecom Express",
-            courier_code: "ecom",
-            rate: 60 + (lastDigit * 5),
-            etd: `${1 + (lastDigit % 3)}-${2 + (lastDigit % 3)} days`,
-            serviceability_type: "forward"
-          },
-          {
-            courier_name: "Delhivery",
-            courier_code: "delhivery",
-            rate: 80 + (lastDigit * 5),
-            etd: `${1 + (lastDigit % 2)}-${3 + (lastDigit % 2)} days`,
-            serviceability_type: "forward"
-          }
-        ];
-        
-        // Add third option for some pincodes
-        if (lastDigit <= 5) {
-          mockCouriers.push({
-            courier_name: "BlueDart",
-            courier_code: "bluedart",
-            rate: 100 + (lastDigit * 10),
-            etd: "1-2 days",
-            serviceability_type: "forward"
-          });
-        }
-        
-        setLocalCourierOptions(mockCouriers);
-        // Also update parent component's state if the prop is provided
+        // Courier options available
+        setLocalCourierOptions(courierOptions);
         if (setCourierOptions) {
-          setCourierOptions(mockCouriers);
+          setCourierOptions(courierOptions);
         }
         setIsServiceable(true);
       }
-      
     } catch (error: any) {
       console.error('Error checking pincode serviceability:', error);
       toast({

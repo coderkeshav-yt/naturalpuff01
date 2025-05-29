@@ -3,8 +3,8 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { Loader2 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 import { CustomerInfo } from '@/types/product';
+import { ShiprocketService } from '@/services/shiprocket';
 
 interface ShiprocketPaymentProps {
   orderId: string;
@@ -20,42 +20,30 @@ const ShiprocketPayment = ({ orderId, amount, customerInfo, onSuccess }: Shiproc
   const handleGeneratePaymentLink = async () => {
     setIsGenerating(true);
     try {
-      // Generate payment link via Shiprocket Edge Function
-      const response = await supabase.functions.invoke('shiprocket', {
-        body: {
-          endpoint: 'generate-payment-link',
-          order_id: orderId,
-          amount: amount,
-          purpose: 'Natural Puff Order Payment',
-          customer_name: customerInfo.name,
-          customer_email: customerInfo.email,
-          customer_phone: customerInfo.phone,
-        },
-        method: 'POST',
+      // Generate payment link via Shiprocket Service
+      const paymentData = await ShiprocketService.generatePaymentLink({
+        order_id: orderId,
+        amount: amount,
+        purpose: 'Natural Puff Order Payment',
+        customer_name: customerInfo.name,
+        customer_email: customerInfo.email,
+        customer_phone: customerInfo.phone,
       });
-
-      if (response.error) {
-        throw new Error(response.error.message || 'Failed to generate payment link');
-      }
-
-      // Unwrap the actual data from response
-      const paymentData = response.data;
 
       if (!paymentData || !paymentData.payment_url) {
         throw new Error('No payment URL received');
       }
       
-      // Update order with payment link info - Store in payment_id field as JSON
-      await supabase
-        .from('orders')
-        .update({ 
-          payment_id: JSON.stringify({
-            payment_link_id: paymentData.id,
-            payment_url: paymentData.payment_url,
-            status: 'pending'
-          })
-        })
-        .eq('id', orderId);
+      // Update order with payment link info in Supabase
+      const { error: updateError } = await ShiprocketService.updateOrderPaymentDetails(orderId, {
+        payment_link_id: paymentData.id,
+        payment_url: paymentData.payment_url,
+        status: 'pending'
+      });
+
+      if (updateError) {
+        console.error('Error updating order payment details:', updateError);
+      }
 
       // Redirect to payment page
       window.location.href = paymentData.payment_url;

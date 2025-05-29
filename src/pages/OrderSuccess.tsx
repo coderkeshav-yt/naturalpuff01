@@ -3,9 +3,12 @@ import React, { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { CheckCircle, ShoppingBag, AlertTriangle, RefreshCcw } from "lucide-react";
+import { CheckCircle, ShoppingBag, AlertTriangle, RefreshCcw, Truck, Package } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
+import OrderTrackingCard from "@/components/checkout/OrderTrackingCard";
+import OrderShippingDetails from "@/components/checkout/OrderShippingDetails";
 
 const OrderSuccess = () => {
   const [searchParams] = useSearchParams();
@@ -35,6 +38,9 @@ const OrderSuccess = () => {
 
       if (error) throw error;
       setOrderDetails(data);
+      
+      // Scroll to top when order details are loaded
+      window.scrollTo(0, 0);
     } catch (error) {
       console.error("Error fetching order details:", error);
     } finally {
@@ -108,40 +114,73 @@ const OrderSuccess = () => {
               <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-brand-600"></div>
             </div>
           ) : orderDetails ? (
-            <div className="border rounded-lg p-4">
-              <h3 className="font-semibold text-lg mb-2">Order Summary</h3>
-              <div className="space-y-1 text-sm mb-4">
-                <div className="flex justify-between">
-                  <span>Total Amount:</span>
-                  <span className="font-medium">₹{orderDetails.total_amount}</span>
+            <div className="space-y-6">
+              <div className="border rounded-lg p-4">
+                <h3 className="font-semibold text-lg mb-2">Order Summary</h3>
+                <div className="space-y-1 text-sm mb-4">
+                  <div className="flex justify-between">
+                    <span>Total Amount:</span>
+                    <span className="font-medium">₹{orderDetails.total_amount}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Payment Method:</span>
+                    <span className="font-medium">
+                      {orderDetails.payment_method === 'online' 
+                        ? 'Online Payment' 
+                        : 'Cash on Delivery'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Status:</span>
+                    <span className={`font-medium capitalize ${isPaymentFailed ? 'text-amber-600' : 'text-green-600'}`}>
+                      {isPaymentFailed ? 'Payment Required' : orderDetails.status}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span>Payment Method:</span>
-                  <span className="font-medium">
-                    {orderDetails.payment_method === 'online' 
-                      ? 'Online Payment' 
-                      : 'Cash on Delivery'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Status:</span>
-                  <span className={`font-medium capitalize ${isPaymentFailed ? 'text-amber-600' : 'text-green-600'}`}>
-                    {isPaymentFailed ? 'Payment Required' : orderDetails.status}
-                  </span>
-                </div>
+                
+                {orderDetails.order_items && orderDetails.order_items.length > 0 && (
+                  <div className="mt-4">
+                    <h4 className="font-medium mb-2">Items:</h4>
+                    <ul className="space-y-2">
+                      {orderDetails.order_items.map((item: any) => (
+                        <li key={item.id} className="flex justify-between">
+                          <span>{item.product_name} × {item.quantity}</span>
+                          <span>₹{item.price * item.quantity}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
               
-              {orderDetails.order_items && orderDetails.order_items.length > 0 && (
-                <div className="mt-4">
-                  <h4 className="font-medium mb-2">Items:</h4>
-                  <ul className="space-y-2">
-                    {orderDetails.order_items.map((item: any) => (
-                      <li key={item.id} className="flex justify-between">
-                        <span>{item.product_name} × {item.quantity}</span>
-                        <span>₹{item.price * item.quantity}</span>
-                      </li>
-                    ))}
-                  </ul>
+              {/* Shipping Details and Tracking */}
+              {!isPaymentFailed && orderDetails.shipping_details && (
+                <>
+                  <Separator />
+                  
+                  {/* Shipping Information */}
+                  <OrderShippingDetails 
+                    orderId={orderDetails.id}
+                    customerName={orderDetails.customer_name}
+                    shippingAddress={orderDetails.shipping_address}
+                    shippingCity={orderDetails.shipping_city}
+                    shippingState={orderDetails.shipping_state}
+                    shippingPincode={orderDetails.shipping_pincode}
+                    shippingDetails={orderDetails.shipping_details}
+                  />
+                </>
+              )}
+              
+              {/* If payment is complete but no shipping details yet */}
+              {!isPaymentFailed && !orderDetails.shipping_details && (
+                <div className="border rounded-lg p-4 bg-gray-50">
+                  <div className="flex items-center mb-2">
+                    <Package className="h-5 w-5 text-brand-600 mr-2" />
+                    <h3 className="font-semibold text-lg">Shipping</h3>
+                  </div>
+                  <p className="text-gray-600 text-sm">
+                    Your order has been received and is being processed. Shipping details will be available once your order ships.
+                  </p>
                 </div>
               )}
             </div>

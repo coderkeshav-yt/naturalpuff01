@@ -80,18 +80,8 @@ const Footer = () => {
 
         {/* Social Media and Copyright */}
         <div className="mt-12 pt-6 border-t border-brand-700 flex flex-col md:flex-row justify-between items-center">
-          <div className="mb-4 md:mb-0 text-cream-300 text-sm flex flex-col">
+          <div className="mb-4 md:mb-0 text-cream-300 text-sm">
             <div>© {new Date().getFullYear()} Natural Puff. All rights reserved.</div>
-            <div className="text-xs opacity-70 mt-1" style={{ fontSize: '0.8rem' }}>
-              Designed & Developed by <a 
-                href="https://quick-site-lab.vercel.app/" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="hover:text-gold-300 transition-colors"
-              >
-                Quick Site Lab
-              </a>
-            </div>
           </div>
           
           <div className="flex space-x-4">
