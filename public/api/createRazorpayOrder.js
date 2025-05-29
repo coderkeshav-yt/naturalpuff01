@@ -28,8 +28,8 @@ export default async function handler(req, res) {
     }
     
     // Configure Razorpay API credentials
-    const keyId = process.env.RAZORPAY_KEY_ID || 'rzp_test_qJB7Gu8slTfsRH';
-    const keySecret = process.env.RAZORPAY_KEY_SECRET || 'SecretTe13Rl3LtTpFPHSx9bFGO7ub';
+    const keyId = process.env.RAZORPAY_KEY_ID || 'rzp_live_BD8DGlGTkxJ8ek';
+    const keySecret = process.env.RAZORPAY_KEY_SECRET || 'vQtUbUJ5Mxtykkrej4lXLyD4';
     
     if (!keyId || !keySecret) {
       throw new Error('Razorpay credentials are not configured');

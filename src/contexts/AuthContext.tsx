@@ -26,6 +26,8 @@ interface AuthContextType {
   signUp: (email: string, password: string, metadata?: any) => Promise<any>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
+  updatePassword: (password: string) => Promise<void>;
   isAdmin: boolean;
   userProfile: UserProfile | null;
   refreshProfile: () => Promise<void>;
@@ -375,6 +377,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const resetPassword = async (email: string) => {
+    try {
+      // Get the current site URL - this should be the development URL when in development
+      // and the production URL when in production
+      const siteUrl = window.location.origin;
+      
+      // For development, we'll use the local URL
+      // For production, we'll use the naturalpuff.com domain
+      const redirectUrl = siteUrl.includes('localhost') || siteUrl.includes('127.0.0.1') 
+        ? `${siteUrl}/reset-password` 
+        : 'https://www.naturalpuff.com/reset-password';
+      
+      console.log('Reset password redirect URL:', redirectUrl);
+      
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: redirectUrl,
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Password Reset Email Sent",
+        description: "Check your email for a link to reset your password. The link will expire in 24 hours.",
+      });
+      
+      return;
+    } catch (error: any) {
+      toast({
+        title: "Password Reset Failed",
+        description: error.message || "Failed to send reset email. Please try again.",
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
+  const updatePassword = async (password: string) => {
+    try {
+      const { error } = await supabase.auth.updateUser({ password });
+
+      if (error) throw error;
+
+      toast({
+        title: "Password Updated",
+        description: "Your password has been updated successfully.",
+      });
+      
+      return;
+    } catch (error: any) {
+      toast({
+        title: "Password Update Failed",
+        description: error.message || "Failed to update password. Please try again.",
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
   const value = {
     user,
     session,
@@ -382,6 +442,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signUp,
     signIn,
     signOut,
+    resetPassword,
+    updatePassword,
     isAdmin,
     userProfile,
     refreshProfile,

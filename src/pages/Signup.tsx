@@ -9,6 +9,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Eye, EyeOff } from 'lucide-react';
 import {
   Form,
   FormControl,
@@ -17,17 +18,28 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
+import indianStates from '@/data/indianStates';
 
 // Define the form validation schema
 const signupSchema = z.object({
   firstName: z.string().min(2, { message: 'First name must be at least 2 characters.' }),
   lastName: z.string().min(2, { message: 'Last name must be at least 2 characters.' }),
   email: z.string().email({ message: 'Please enter a valid email address.' }),
-  phone: z.string().min(10, { message: 'Phone number must be at least 10 digits.' }),
+  phone: z.string()
+    .min(10, { message: 'Phone number must be at least 10 digits.' })
+    .max(10, { message: 'Phone number cannot exceed 10 digits.' })
+    .regex(/^[0-9]+$/, { message: 'Phone number must contain only digits.' }),
   address: z.string().optional(),
   city: z.string().optional(),
-  state: z.string().optional(),
+  state: z.string().min(1, { message: 'Please select a state.' }),
   pincode: z.string().optional(),
   password: z.string().min(6, { message: 'Password must be at least 6 characters.' }),
   confirmPassword: z.string(),
@@ -43,6 +55,8 @@ const Signup = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   
   // Initialize the form
   const form = useForm<SignupFormValues>({
@@ -203,9 +217,20 @@ const Signup = () => {
                     name="phone"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Phone Number</FormLabel>
+                        <FormLabel>Phone Number*</FormLabel>
                         <FormControl>
-                          <Input type="tel" placeholder="1234567890" {...field} />
+                          <Input 
+                            type="tel" 
+                            placeholder="1234567890" 
+                            maxLength={10}
+                            onKeyPress={(e) => {
+                              const charCode = e.which ? e.which : e.keyCode;
+                              if (charCode > 31 && (charCode < 48 || charCode > 57)) {
+                                e.preventDefault();
+                              }
+                            }}
+                            {...field} 
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -246,10 +271,24 @@ const Signup = () => {
                       name="state"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>State</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Maharashtra" {...field} />
-                          </FormControl>
+                          <FormLabel>State*</FormLabel>
+                          <Select 
+                            onValueChange={field.onChange} 
+                            defaultValue={field.value}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select a state" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {indianStates.map((state) => (
+                                <SelectItem key={state} value={state}>
+                                  {state}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -275,10 +314,23 @@ const Signup = () => {
                     name="password"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Password</FormLabel>
-                        <FormControl>
-                          <Input type="password" {...field} />
-                        </FormControl>
+                        <FormLabel>Password*</FormLabel>
+                        <div className="relative">
+                          <FormControl>
+                            <Input 
+                              type={showPassword ? 'text' : 'password'} 
+                              className="pr-10"
+                              {...field} 
+                            />
+                          </FormControl>
+                          <button
+                            type="button"
+                            className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                            onClick={() => setShowPassword(!showPassword)}
+                          >
+                            {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                          </button>
+                        </div>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -289,10 +341,23 @@ const Signup = () => {
                     name="confirmPassword"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Confirm Password</FormLabel>
-                        <FormControl>
-                          <Input type="password" {...field} />
-                        </FormControl>
+                        <FormLabel>Confirm Password*</FormLabel>
+                        <div className="relative">
+                          <FormControl>
+                            <Input 
+                              type={showConfirmPassword ? 'text' : 'password'} 
+                              className="pr-10"
+                              {...field} 
+                            />
+                          </FormControl>
+                          <button
+                            type="button"
+                            className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          >
+                            {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                          </button>
+                        </div>
                         <FormMessage />
                       </FormItem>
                     )}

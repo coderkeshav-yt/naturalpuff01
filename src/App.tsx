@@ -12,6 +12,8 @@ import Contact from './pages/Contact';
 import NotFound from './pages/NotFound';
 import Signup from './pages/Signup';
 import Login from './pages/Login';
+import ResetPassword from './pages/ResetPassword';
+import ResetPasswordError from './pages/ResetPasswordError';
 import Profile from './pages/Profile';
 import Checkout from './pages/Checkout';
 import Payment from './pages/Payment';
@@ -38,6 +40,8 @@ function App() {
           <Route path="contact" element={<Contact />} />
           <Route path="signup" element={<Signup />} />
           <Route path="login" element={<Login />} />
+          <Route path="reset-password" element={<ResetPassword />} />
+          <Route path="reset-password-error" element={<ResetPasswordError />} />
           <Route path="profile" element={<Profile />} />
           <Route path="checkout" element={<Checkout />} />
           <Route path="payment" element={<Payment />} />

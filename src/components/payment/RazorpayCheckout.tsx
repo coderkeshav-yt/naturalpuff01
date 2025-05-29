@@ -138,7 +138,7 @@ export const RazorpayCheckout = ({
       console.log('Order created:', razorpayOrder);
 
       // Get Razorpay key from env variable
-      const razorpayKey = import.meta.env.VITE_RAZORPAY_KEY_ID;
+      const razorpayKey = import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_live_BD8DGlGTkxJ8ek';
       if (!razorpayKey) {
         throw new Error('Razorpay key is not configured');
       }

@@ -106,7 +106,116 @@ async function handleWebhook(payload: any, signature: string) {
     console.log("Verified webhook from Razorpay:", payload.event);
     
     // Process the payment based on the event type
-    // For example, update order status in database
+    const event = payload.event;
+    const paymentId = payload.payload.payment?.entity?.id;
+    const orderId = payload.payload.payment?.entity?.order_id;
+    
+    if (!paymentId || !orderId) {
+      console.error("Missing payment or order ID in webhook payload");
+      return new Response(
+        JSON.stringify({ error: "Invalid webhook payload" }),
+        {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders,
+          },
+        }
+      );
+    }
+    
+    // Create Supabase client to update database
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || 'https://nmpaafoonvivsdxcbaoe.supabase.co';
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    
+    if (!supabaseKey) {
+      console.error("Supabase service role key is not configured");
+      return new Response(
+        JSON.stringify({ error: "Database connection error" }),
+        {
+          status: 500,
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders,
+          },
+        }
+      );
+    }
+    
+    // Initialize Supabase client
+    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    
+    // Update order status based on event type
+    let status = '';
+    let error = null;
+    
+    try {
+      switch (event) {
+        case 'payment.authorized':
+          status = 'payment_authorized';
+          break;
+        
+        case 'payment.captured':
+          status = 'paid';
+          break;
+        
+        case 'payment.failed':
+          status = 'payment_failed';
+          break;
+        
+        case 'refund.created':
+        case 'refund.processed':
+          status = 'refunded';
+          break;
+        
+        default:
+          console.log(`Unhandled event type: ${event}`);
+          return new Response(
+            JSON.stringify({ status: "success", message: "Event acknowledged but not processed" }),
+            {
+              status: 200,
+              headers: {
+                'Content-Type': 'application/json',
+                ...corsHeaders,
+              },
+            }
+          );
+      }
+      
+      // Find the order with the Razorpay order ID
+      const { data: orderData, error: findError } = await supabase
+        .from('orders')
+        .select('id')
+        .eq('razorpay_order_id', orderId)
+        .single();
+      
+      if (findError || !orderData) {
+        console.error("Order not found:", findError);
+        throw new Error(`Order with Razorpay ID ${orderId} not found`);
+      }
+      
+      // Update the order status
+      const { error: updateError } = await supabase
+        .from('orders')
+        .update({
+          status: status,
+          payment_id: paymentId,
+          payment_status: status,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', orderData.id);
+      
+      if (updateError) {
+        console.error("Failed to update order:", updateError);
+        throw new Error(`Failed to update order status: ${updateError.message}`);
+      }
+      
+      console.log(`Order ${orderData.id} updated with status: ${status}`);
+    } catch (err) {
+      console.error("Error processing webhook:", err);
+      error = err;
+    }
 
     return new Response(
       JSON.stringify({ 
@@ -146,7 +255,7 @@ async function validatePayment(data: any) {
     }
     
     // Get the key secret
-    const razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET");
+    const razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET") || "vQtUbUJ5Mxtykkrej4lXLyD4";
     if (!razorpayKeySecret) {
       throw new Error("Razorpay key secret is not configured");
     }
