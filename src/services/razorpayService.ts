@@ -133,7 +133,7 @@ export const openRazorpayCheckout = (
       throw new Error('Razorpay is not loaded. Please call loadRazorpayScript first.');
     }
     
-    // Create Razorpay instance
+    // Create Razorpay instance with improved mobile handling
     const razorpay = new window.Razorpay({
       ...options,
       handler: function(response: any) {
@@ -144,7 +144,21 @@ export const openRazorpayCheckout = (
         ondismiss: function() {
           console.log('Payment window closed by user');
           onFailure(new Error('Payment cancelled by user'));
-        }
+        },
+        escape: false,  // Prevent escape key from closing modal
+        confirm_close: true, // Ask for confirmation when closing
+        animation: true // Enable animations
+      },
+      retry: {
+        enabled: true,
+        max_count: 3
+      },
+      timeout: 300, // 5 minutes timeout
+      remember_customer: true,
+      prefill: options.prefill || {}, // Ensure prefill is always defined
+      theme: {
+        color: options.theme?.color || '#167152',
+        backdrop_color: 'rgba(0, 0, 0, 0.7)'
       }
     });
     

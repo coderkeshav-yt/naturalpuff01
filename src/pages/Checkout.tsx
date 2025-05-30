@@ -437,41 +437,102 @@ const Checkout = () => {
     navigate(`/order-success?id=${orderId}&payment=failed`);
   };
 
-  // Helper function to update order payment status with retry logic
+  // Helper function to update order payment status with improved retry logic
   const updateOrderPaymentStatus = async (orderId: string, status: string) => {
     try {
       console.log(`Updating order ${orderId} payment status to ${status}`);
       
-      // Try up to 3 times to update the order status
+      // Try up to 5 times to update the order status with exponential backoff
       let attempts = 0;
       let success = false;
       
-      while (attempts < 3 && !success) {
+      while (attempts < 5 && !success) {
         attempts++;
         console.log(`Attempt ${attempts} to update order status`);
         
-        const { error } = await supabase
-          .from('orders')
-          .update({ 
-            payment_status: status,
-            updated_at: new Date().toISOString() 
-          })
-          .eq('id', orderId);
-        
-        if (error) {
-          console.error(`Error updating order status (attempt ${attempts}):`, error);
-          // Wait a bit before retrying
-          if (attempts < 3) await new Promise(r => setTimeout(r, 1000));
-        } else {
+        try {
+          // First check if we have permission to update this order
+          const { data: checkData, error: checkError } = await supabase
+            .from('orders')
+            .select('id, payment_status')
+            .eq('id', orderId)
+            .single();
+          
+          if (checkError) {
+            console.error(`Error checking order (attempt ${attempts}):`, checkError);
+            throw checkError;
+          }
+          
+          if (!checkData) {
+            console.error(`Order ${orderId} not found`);
+            throw new Error(`Order ${orderId} not found`);
+          }
+          
+          // Now update the order
+          const { error } = await supabase
+            .from('orders')
+            .update({ 
+              payment_status: status,
+              updated_at: new Date().toISOString() 
+            })
+            .eq('id', orderId);
+          
+          if (error) {
+            console.error(`Error updating order status (attempt ${attempts}):`, error);
+            throw error;
+          }
+          
           console.log(`Successfully updated order ${orderId} status to ${status}`);
           success = true;
+          
+        } catch (updateError) {
+          // Calculate exponential backoff delay: 1s, 2s, 4s, 8s, 16s
+          const delay = Math.min(1000 * Math.pow(2, attempts - 1), 16000);
+          console.log(`Retrying after ${delay}ms delay...`);
+          
+          if (attempts < 5) {
+            await new Promise(r => setTimeout(r, delay));
+          }
+        }
+      }
+      
+      // If still not successful after all retries, try to fix permissions
+      if (!success) {
+        console.log('Attempting to fix database permissions before final try...');
+        
+        try {
+          // Call the fixOrderPermissions function
+          const { error: fixError } = await supabase.functions.invoke('fixOrderPermissions');
+          if (fixError) {
+            console.error('Error fixing permissions:', fixError);
+          } else {
+            console.log('Permissions fixed, trying one more update...');
+            
+            // One final attempt after fixing permissions
+            const { error: finalError } = await supabase
+              .from('orders')
+              .update({ 
+                payment_status: status,
+                updated_at: new Date().toISOString() 
+              })
+              .eq('id', orderId);
+            
+            if (!finalError) {
+              console.log(`Finally updated order ${orderId} status to ${status}`);
+              success = true;
+            } else {
+              console.error('Final update attempt failed:', finalError);
+            }
+          }
+        } catch (fixAttemptError) {
+          console.error('Error during permission fix attempt:', fixAttemptError);
         }
       }
       
       if (!success) {
         toast({
           title: "Database Error",
-          description: "Failed to update order status. Please contact support.",
+          description: "Failed to update order status. Your order is saved but may show incorrect status.",
           variant: "destructive"
         });
       }
