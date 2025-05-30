@@ -202,9 +202,13 @@ export const processPayment = async (
       throw new Error('Razorpay is not properly initialized');
     }
     
-    // Step 2: Get the Razorpay key - hardcoded for production reliability
-    // Using the live key directly to ensure it works in production
-    const key = 'rzp_live_BD8DGlGTkxJ8ek'; // Live key for production
+    // Step 2: Get the Razorpay key from environment variables
+    // Never hardcode API keys directly in the code
+    const key = import.meta.env.VITE_RAZORPAY_KEY_ID;
+    if (!key) {
+      console.error('Razorpay key not found in environment variables');
+      throw new Error('Razorpay key is not configured');
+    }
     
     console.log('Using Razorpay key:', key);
     

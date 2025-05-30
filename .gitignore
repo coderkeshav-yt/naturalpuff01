@@ -10,6 +10,12 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+
+# Environment files - never commit these
+.env
+.env.local
+.env.development
+.env.production
 *.local
 
 # Editor directories and files
