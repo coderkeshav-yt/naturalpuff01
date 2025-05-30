@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious, type CarouselApi } from "@/components/ui/carousel";
 import { Card, CardContent } from "@/components/ui/card";
 import { motion } from 'framer-motion';
+import LazyImage from '@/components/ui/LazyImage';
 
 interface CarouselItemType {
   id: number;
@@ -104,10 +105,11 @@ export function HeroCarousel() {
                   <Card className="border-none shadow-none">
                     <CardContent className="relative overflow-hidden rounded-xl p-0">
                       <div className="w-full h-[200px] max-h-[200px] md:h-[250px] lg:h-[300px]">
-                        <img 
+                        <LazyImage 
                           src={item.image_url} 
                           alt={item.title} 
-                          className="w-full h-full object-cover"
+                          className="w-full h-full"
+                          onLoad={() => console.log(`Loaded hero carousel image: ${item.image_url}`)}
                         />
                       </div>
                       {item.product_link && (

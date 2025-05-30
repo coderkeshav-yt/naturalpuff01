@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import LazyImage from '@/components/ui/LazyImage';
 
 interface ProductImageCarouselProps {
   images: string[] | undefined;
@@ -81,15 +82,12 @@ export function ProductImageCarousel({ images = [], alt, className = '' }: Produ
   if (processedImages.length === 1) {
     return (
       <div className={`relative ${className} group`}>
-        <img 
+        <LazyImage 
           src={processedImages[0]} 
           alt={alt}
-          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-          onError={(e) => {
-            console.error('Error loading image:', processedImages[0]);
-            e.currentTarget.src = 'https://via.placeholder.com/800x600?text=Image+Not+Found';
-            e.currentTarget.className = 'w-full h-full object-cover';
-          }}
+          className="w-full h-full transition-transform duration-300 group-hover:scale-105"
+          placeholderSrc="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9IiNlOWVjZWYiLz48L3N2Zz4="
+          onLoad={() => console.log(`Loaded image: ${processedImages[0]}`)}
         />
       </div>
     );
@@ -114,13 +112,12 @@ export function ProductImageCarousel({ images = [], alt, className = '' }: Produ
   return (
     <div className={`relative ${className} group`}>
       {/* Main image */}
-      <img 
+      <LazyImage 
         src={processedImages[currentIndex]} 
         alt={`${alt} - image ${currentIndex + 1}`}
-        className="w-full h-full object-cover"
-        onError={(e) => {
-          e.currentTarget.src = 'https://via.placeholder.com/800x600?text=Image+Not+Found';
-        }}
+        className="w-full h-full"
+        placeholderSrc="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9IiNlOWVjZWYiLz48L3N2Zz4="
+        onLoad={() => console.log(`Loaded carousel image: ${processedImages[currentIndex]}`)}
       />
       
       {/* Navigation arrows */}

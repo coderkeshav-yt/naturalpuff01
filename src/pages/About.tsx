@@ -3,6 +3,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { motion } from 'framer-motion';
+import LazyImage from '@/components/ui/LazyImage';
 
 // Placeholder images
 const founderImage = '/placeholder.svg';
@@ -55,7 +56,7 @@ const About = () => {
           <div className="flex flex-col lg:flex-row items-center gap-12">
             <div className="w-full lg:w-1/2">
               <div className="rounded-lg overflow-hidden shadow-xl">
-                <img 
+                <LazyImage 
                   src="https://res.cloudinary.com/dlvxjnycr/image/upload/v1746699710/puff_02_gono4m.jpg" 
                   alt="The beginning of Natural Puff" 
                   className="w-full h-auto"
@@ -124,10 +125,10 @@ That moment of discovery—a blend of unique taste, cultural tradition, and natu
               className="text-center md:text-left"
             >
               <div className="mb-6 mx-auto md:mx-0 w-48 h-48 rounded-full overflow-hidden border-4 border-brand-100">
-                <img 
+                <LazyImage 
                   src="https://res.cloudinary.com/dlvxjnycr/image/upload/v1746450710/Screenshot_2025-05-05_184100_ssvwxw.png" 
                   alt="Animesh Doshi" 
-                  className="w-full h-full object-cover"
+                  className="w-full h-full"
                 />
               </div>
               <h3 className="text-2xl font-bold text-brand-800 mb-2">Animesh Doshi</h3>
@@ -147,10 +148,10 @@ That moment of discovery—a blend of unique taste, cultural tradition, and natu
               className="text-center md:text-left"
             >
               <div className="mb-6 mx-auto md:mx-0 w-48 h-48 rounded-full overflow-hidden border-4 border-brand-100">
-                <img 
+                <LazyImage 
                   src="https://res.cloudinary.com/dlvxjnycr/image/upload/v1746438074/WhatsApp_Image_2025-05-05_at_14.47.13_4e153e55_jvcaar.jpg" 
                   alt="Ravi Prakash" 
-                  className="w-full h-full object-cover"
+                  className="w-full h-full"
                 />
               </div>
               <h3 className="text-2xl font-bold text-brand-800 mb-2">Ravi Prakash</h3>
@@ -169,7 +170,7 @@ That moment of discovery—a blend of unique taste, cultural tradition, and natu
           <div className="flex flex-col lg:flex-row-reverse items-center gap-12">
             <div className="w-full lg:w-1/2">
               <div className="rounded-lg overflow-hidden shadow-xl">
-                <img 
+                <LazyImage 
                   src="https://res.cloudinary.com/dlvxjnycr/image/upload/v1746784524/founder_hvmxub.jpg" 
                   alt="Animesh Doshi, Founder of Natural Puff" 
                   className="w-full h-auto"
