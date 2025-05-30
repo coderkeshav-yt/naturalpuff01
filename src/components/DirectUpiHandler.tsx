@@ -35,8 +35,12 @@ const DirectUpiHandler: React.FC<DirectUpiHandlerProps> = ({
       // Generate a transaction reference
       const txnRef = `order_${orderId}_${Date.now()}`;
       
-      // Create UPI payment URL
-      const upiUrl = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=NaturalPuff&am=${formattedAmount}&cu=INR&tn=${encodeURIComponent(`Order ${orderId} - ${customerInfo.name}`)}&tr=${encodeURIComponent(txnRef)}`;
+      // Create UPI payment URL with callback URL for automatic verification
+      // The callback URL will help with automatic verification when user returns from UPI app
+      const callbackUrl = encodeURIComponent(`${window.location.origin}/payment-verification?order_id=${orderId}`);
+      
+      // Create UPI payment URL with callback parameters
+      const upiUrl = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=NaturalPuff&am=${formattedAmount}&cu=INR&tn=${encodeURIComponent(`Order ${orderId} - ${customerInfo.name}`)}&tr=${encodeURIComponent(txnRef)}&url=${callbackUrl}`;
       
       console.log(`Opening ${appName} payment with URL:`, upiUrl);
       
@@ -46,8 +50,25 @@ const DirectUpiHandler: React.FC<DirectUpiHandlerProps> = ({
         amount: formattedAmount,
         txnRef,
         timestamp: Date.now(),
+        paymentApp: appName,
+        customerInfo: {
+          name: customerInfo.name,
+          email: customerInfo.email,
+          phone: customerInfo.phone
+        }
+      }));
+      
+      // Also store in sessionStorage as a backup (localStorage might be cleared in some mobile browsers)
+      sessionStorage.setItem('np_current_payment', JSON.stringify({
+        orderId,
+        amount: formattedAmount,
+        txnRef,
+        timestamp: Date.now(),
         paymentApp: appName
       }));
+      
+      // Set a flag to indicate payment is in progress
+      localStorage.setItem('payment_in_progress', 'true');
       
       // Update order with payment attempt info
       try {
@@ -56,6 +77,8 @@ const DirectUpiHandler: React.FC<DirectUpiHandlerProps> = ({
           .update({
             status: 'payment_initiated',
             payment_id: txnRef,
+            payment_app: appName,
+            payment_attempt_time: new Date().toISOString(),
             updated_at: new Date().toISOString()
           })
           .eq('id', orderId);

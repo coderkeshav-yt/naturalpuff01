@@ -29,6 +29,7 @@ const Navbar = () => {
     { name: 'Health Benefits', path: '/health-benefits' },
     { name: 'Blog', path: '/blog' },
     { name: 'Contact', path: '/contact' },
+    { name: 'Sales Team', path: '/sales-team' },
   ];
 
   const toggleMobileMenu = () => {
