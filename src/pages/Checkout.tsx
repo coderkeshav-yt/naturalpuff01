@@ -15,6 +15,7 @@ import { CustomerInfo, Coupon } from '@/types/product';
 import CheckoutForm from '@/components/checkout/CheckoutForm';
 import ShiprocketServiceabilityChecker from '@/components/checkout/ShiprocketServiceability';
 import { processPayment } from '@/services/razorpayService';
+import DirectUpiPayment from '@/components/DirectUpiPayment';
 import { loadScript } from '@/lib/utils';
 import OrderPolicyError from '@/components/layout/OrderPolicyError';
 import DirectPermissionFix from '@/components/admin/DirectPermissionFix';
@@ -244,49 +245,100 @@ const Checkout = () => {
   // Handle form submission
   const handleFormSubmit = (formData: CustomerInfo) => {
     setCustomerInfo(formData);
-    setPincode(formData.pincode);
-    setCheckoutStep(2);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+    
+    toast({
+      title: "Coupon Applied",
+      description: `You got ${data.discount_percent}% off!`,
+    });
+  } catch (error) {
+    console.error('Error applying coupon:', error);
+    toast({
+      title: "Error",
+      description: "Failed to apply coupon. Please try again.",
+      variant: "destructive"
+    });
+  } finally {
+    setIsCouponLoading(false);
+  }
+};
 
-  // Completely rewritten payment handler using our new simplified service
-  const handleRazorpayPayment = async (orderId: string) => {
-    // Validate customer information
-    if (!customerInfo) {
-      toast({
-        title: "Error",
-        description: "Customer information is missing.",
-        variant: "destructive"
-      });
-      return false;
-    }
+// Remove coupon
+const handleRemoveCoupon = () => {
+  removeCoupon();
+  setCouponCode('');
+  toast({
+    title: "Coupon Removed",
+    description: "The coupon has been removed from your order."
+  });
+};
+
+// Handle form submission
+const handleFormSubmit = (formData: CustomerInfo) => {
+  setCustomerInfo(formData);
+  setPincode(formData.pincode);
+  setCheckoutStep(2);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+// Completely rewritten payment handler using our new simplified service
+const handleRazorpayPayment = async (orderId: string) => {
+  if (!customerInfo) {
+    toast({
+      title: "Error",
+      description: "Customer information is missing.",
+      variant: "destructive"
+    });
+    return;
+  }
+  
+  try {
+    console.log('Processing payment for order:', orderId);
+    console.log('Total with shipping:', finalTotal + shippingCost);
     
-    setIsProcessing(true);
+    // Calculate total with shipping for payment
+    const totalWithShipping = finalTotal + shippingCost;
     
-    try {
-      console.log('Starting payment process for order:', orderId);
+    // Check if we need to handle UPI payment directly
+    const isUpiSelected = document.querySelector('input[name="upi-option"]:checked');
+    const selectedUpiOption = isUpiSelected?.getAttribute('data-upi-option');
+    
+    if (selectedUpiOption && selectedUpiOption !== 'other') {
+      // Use direct UPI payment for specific UPI apps
+      let upiId = '';
       
-      // Calculate total with shipping cost
-      const totalWithShipping = finalTotal + shippingCost;
+      // Set UPI ID based on selected option
+      switch (selectedUpiOption) {
+        case 'phonepe':
+          upiId = 'naturalpuff@ybl'; // Replace with your actual PhonePe UPI ID
+          break;
+        case 'gpay':
+          upiId = 'naturalpuff@okicici'; // Replace with your actual Google Pay UPI ID
+          break;
+        case 'paytm':
+          upiId = 'naturalpuff@paytm'; // Replace with your actual Paytm UPI ID
+          break;
+        default:
+          upiId = 'naturalpuff@ybl'; // Default UPI ID
+      }
       
-      // Use our new simplified payment process function
-      await processPayment(
-        totalWithShipping, // Include shipping cost in payment amount
+      console.log(`Using direct UPI payment with ${selectedUpiOption} to ${upiId}`);
+      
+      // Store order ID in localStorage for verification after return
+      localStorage.setItem('last_order_id', orderId);
+      localStorage.setItem('payment_method', selectedUpiOption);
+      localStorage.setItem('payment_amount', totalWithShipping.toString());
+      localStorage.setItem('payment_timestamp', Date.now().toString());
+      
+      // Use direct UPI payment
+      await directUpiPayment(
+        totalWithShipping,
         orderId,
-        {
-          name: customerInfo.name,
-          email: customerInfo.email,
-          phone: customerInfo.phone
+        upiId,
+        () => {
+          // This won't be called immediately since the page will reload
+          // We'll handle success in componentDidMount or useEffect
         },
-        // Success handler
-        (response) => {
-          console.log('Payment successful:', response);
-          if (!response.razorpay_payment_id || !response.razorpay_order_id || !response.razorpay_signature) {
-            toast({
-              title: "Payment Error",
-              description: "Received invalid payment response. Please contact support.",
-              variant: "destructive"
-            });
+        (error) => handlePaymentFailure(orderId, error.message || 'Direct UPI payment failed')
             setIsProcessing(false);
             return;
           }

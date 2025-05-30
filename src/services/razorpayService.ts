@@ -233,6 +233,43 @@ export const openRazorpayCheckout = (
  * Complete payment flow in one function - DIRECT PAYMENT WITHOUT ORDER CREATION
  * This handles the payment process directly without creating an order first
  */
+// Simple function to directly open UPI app without relying on Razorpay callbacks
+export const directUpiPayment = async (
+  amount: number,
+  orderId: string,
+  upiId: string,
+  onSuccess: () => void,
+  onFailure: (error: any) => void
+): Promise<void> => {
+  try {
+    // Format amount to 2 decimal places
+    const formattedAmount = amount.toFixed(2);
+    
+    // Generate a transaction reference
+    const txnRef = `order_${orderId}_${Date.now()}`;
+    
+    // Create UPI payment URL
+    const upiUrl = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=NaturalPuff&am=${formattedAmount}&cu=INR&tn=${encodeURIComponent(`Payment for order #${orderId}`)}&tr=${encodeURIComponent(txnRef)}`;
+    
+    console.log('Opening direct UPI payment URL:', upiUrl);
+    
+    // Store order info in localStorage for verification after return
+    localStorage.setItem('current_payment_order', orderId);
+    localStorage.setItem('payment_amount', formattedAmount);
+    localStorage.setItem('payment_txn_ref', txnRef);
+    localStorage.setItem('payment_start_time', Date.now().toString());
+    
+    // Open the UPI URL
+    window.location.href = upiUrl;
+    
+    // The page will reload when user returns from UPI app
+    // We'll handle the verification in the component that called this function
+  } catch (error) {
+    console.error('Error initiating direct UPI payment:', error);
+    onFailure(error);
+  }
+};
+
 export const processPayment = async (
   amount: number,
   orderId: string,
