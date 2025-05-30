@@ -15,6 +15,7 @@ const Blog = lazy(() => import('./pages/Blog'));
 const BlogPost = lazy(() => import('./pages/BlogPost'));
 const Products = lazy(() => import('./pages/Products'));
 const Contact = lazy(() => import('./pages/Contact'));
+const SalesTeam = lazy(() => import('./pages/SalesTeam'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 const Signup = lazy(() => import('./pages/Signup'));
 const Login = lazy(() => import('./pages/Login'));
@@ -71,6 +72,11 @@ function App() {
           <Route path="contact" element={
             <Suspense fallback={<LoadingFallback />}>
               <Contact />
+            </Suspense>
+          } />
+          <Route path="sales-team" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <SalesTeam />
             </Suspense>
           } />
           <Route path="signup" element={
