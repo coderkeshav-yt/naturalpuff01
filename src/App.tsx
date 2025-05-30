@@ -25,6 +25,7 @@ import EventsOffers from './pages/EventsOffers';
 import AdminRoute from './components/auth/AdminRoute';
 import OrderSuccess from './pages/OrderSuccess';
 import FixPermissions from './pages/FixPermissions';
+import PaymentVerificationPage from './pages/PaymentVerificationPage';
 import { Toaster } from "@/components/ui/toaster";
 
 function App() {
@@ -46,6 +47,7 @@ function App() {
           <Route path="checkout" element={<Checkout />} />
           <Route path="payment" element={<Payment />} />
           <Route path="process-payment" element={<ProcessPayment />} />
+          <Route path="payment-verification" element={<PaymentVerificationPage />} />
           <Route path="health-benefits" element={<HealthBenefits />} />
           <Route path="events-offers" element={<EventsOffers />} />
           <Route path="order-success" element={<OrderSuccess />} />
