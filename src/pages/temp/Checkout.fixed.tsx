@@ -8,14 +8,14 @@ import { useCart } from '@/contexts/CartContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Separator } from '@/components/ui/separator';
-import { Minus, Plus, Trash, Tag, Loader2, CreditCard, MapPin } from 'lucide-react';
+import { Minus, Plus, Trash, Tag, Loader2, CreditCard } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { CustomerInfo, Coupon } from '@/types/product';
 import CheckoutForm from '@/components/checkout/CheckoutForm';
 import ShiprocketServiceabilityChecker from '@/components/checkout/ShiprocketServiceability';
-import { processPayment, loadRazorpayScript } from '@/services/razorpayService';
+import { processPayment } from '@/services/razorpayService';
 import DirectUpiHandler from '@/components/DirectUpiHandler';
 import { loadScript } from '@/lib/utils';
 import OrderPolicyError from '@/components/layout/OrderPolicyError';
@@ -24,7 +24,7 @@ import DirectPermissionFix from '@/components/admin/DirectPermissionFix';
 const Checkout = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { items, totalPrice, clearCart, removeItem, updateQuantity, applyCoupon, removeCoupon, finalTotal: cartFinalTotal, discountAmount: cartDiscountAmount, appliedCoupon: cartAppliedCoupon } = useCart();
+  const { items, subtotal, clearCart, removeItem } = useCart();
   const { user } = useAuth();
 
   // State variables
@@ -39,6 +39,7 @@ const Checkout = () => {
   const [courierOptions, setCourierOptions] = useState([]);
   const [couponCode, setCouponCode] = useState('');
   const [isCouponLoading, setIsCouponLoading] = useState(false);
+  const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
   const [discountAmount, setDiscountAmount] = useState(0);
   const [finalTotal, setFinalTotal] = useState(0);
   const [showUpiPayment, setShowUpiPayment] = useState(false);
@@ -47,13 +48,14 @@ const Checkout = () => {
 
   // Calculate final total
   useEffect(() => {
-    setDiscountAmount(cartDiscountAmount);
-    setFinalTotal(cartFinalTotal + shippingCost);
-  }, [cartFinalTotal, cartDiscountAmount, shippingCost]);
+    const discount = appliedCoupon ? (subtotal * appliedCoupon.discount_percent) / 100 : 0;
+    setDiscountAmount(discount);
+    setFinalTotal(subtotal - discount + shippingCost);
+  }, [subtotal, appliedCoupon, shippingCost]);
 
   // Handle quantity change
-  const handleQuantityChange = (id: number, quantity: number) => {
-    updateQuantity(id, quantity);
+  const handleQuantityChange = (id: string, quantity: number) => {
+    // Implement quantity change logic
   };
 
   // Apply coupon
@@ -88,7 +90,7 @@ const Checkout = () => {
         }
         
         // Check minimum order value
-        if (data.min_order_value && totalPrice < data.min_order_value) {
+        if (data.min_order_value && subtotal < data.min_order_value) {
           toast({
             title: "Cannot Apply Coupon",
             description: `Minimum order value of ₹${data.min_order_value} required.`,
@@ -98,7 +100,8 @@ const Checkout = () => {
         }
         
         // Apply coupon
-        applyCoupon(data);
+        setAppliedCoupon(data);
+        localStorage.setItem('appliedCoupon', JSON.stringify(data));
         
         toast({
           title: "Coupon Applied",
@@ -125,7 +128,8 @@ const Checkout = () => {
 
   // Remove coupon
   const handleRemoveCoupon = () => {
-    removeCoupon();
+    setAppliedCoupon(null);
+    localStorage.removeItem('appliedCoupon');
     setCouponCode('');
     toast({
       title: "Coupon Removed",
@@ -135,159 +139,163 @@ const Checkout = () => {
 
   // Handle form submission
   const handleFormSubmit = (formData: CustomerInfo) => {
-    try {
-      console.log('Form submitted with data:', formData);
-      setCustomerInfo(formData);
-      setPincode(formData.pincode);
-      setCheckoutStep(2);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      
-      // Automatically check pincode availability
-      setTimeout(() => {
-        if (formData.pincode && formData.pincode.length === 6) {
-          console.log('Auto-checking pincode:', formData.pincode);
-          const mockCourierOptions = [
-            {
-              courier_name: "DTDC",
-              courier_code: "1",
-              rate: 120,
-              etd: "2-3 days",
-              serviceability_type: "surface"
-            },
-            {
-              courier_name: "Delhivery",
-              courier_code: "2",
-              rate: 150,
-              etd: "1-2 days",
-              serviceability_type: "air"
-            }
-          ];
-          
-          setCourierOptions(mockCourierOptions);
-          setSelectedCourier(mockCourierOptions[0].courier_code);
-          setShippingCost(mockCourierOptions[0].rate);
-          
-          toast({
-            title: "Delivery Available",
-            description: "We can deliver to your location.",
-            variant: "default"
-          });
-        }
-      }, 500);
-    } catch (error) {
-      console.error('Error in handleFormSubmit:', error);
-      toast({
-        title: "Error",
-        description: "There was a problem processing your information. Please try again.",
-        variant: "destructive"
-      });
-    }
+    setCustomerInfo(formData);
+    setPincode(formData.pincode);
+    setCheckoutStep(2);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // Handle UPI direct payment
   const handleUpiDirectPayment = async () => {
+    if (!customerInfo) {
+      toast({
+        title: 'Error',
+        description: 'Please enter your information first',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    setIsProcessing(true);
+    
     try {
-      setIsProcessing(true);
-      console.log('Starting UPI direct payment flow');
-      
-      if (!upiApp) {
-        toast({
-          title: "Select UPI App",
-          description: "Please select a UPI app to continue",
-          variant: "destructive"
-        });
-        setIsProcessing(false);
-        return;
-      }
-      
       // Create order first
       const orderId = await createOrder(finalTotal - shippingCost);
       
       if (!orderId) {
-        console.error('Failed to create order for UPI payment');
         setIsProcessing(false);
         return;
       }
       
-      console.log('Order created successfully for UPI payment:', orderId);
+      // Process UPI payment
+      const { success, upiUrl, txnRef, upiId } = await processPayment({
+        amount: totalWithShipping,
+        orderId,
+        customerName: customerInfo.name,
+        customerEmail: customerInfo.email,
+        customerPhone: customerInfo.phone,
+        paymentMethod: 'upi_direct',
+        upiApp: upiApp
+      });
       
-      // Set current order ID for UPI handler
-      setCurrentOrderId(orderId);
-      setShowUpiPayment(true);
-      setIsProcessing(false);
-      
+      if (success && upiUrl) {
+        // Open UPI app
+        window.location.href = upiUrl;
+      } else {
+        // Handle error
+        await supabase
+          .from('orders')
+          .update({ 
+            payment_method: 'upi_direct',
+            payment_status: 'failed',
+            status: 'payment_failed'
+          })
+          .eq('id', orderId);
+          
+        toast({
+          title: "Payment Error",
+          description: "Failed to initiate UPI payment. Please try again.",
+          variant: "destructive"
+        });
+      }
     } catch (error: any) {
-      console.error('Error in UPI direct payment:', error);
+      console.error('Error initiating UPI payment:', error);
       toast({
         title: "Payment Error",
         description: error.message || "Failed to initiate UPI payment. Please try again.",
         variant: "destructive"
       });
+    } finally {
       setIsProcessing(false);
     }
   };
 
   // Handle Razorpay payment
   const handleRazorpayPayment = async () => {
+    if (!customerInfo) {
+      toast({
+        title: 'Error',
+        description: 'Please enter your information first',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    setIsProcessing(true);
+    
     try {
-      setIsProcessing(true);
-      console.log('Starting Razorpay payment flow');
+      // Load Razorpay script
+      const res = await loadScript('https://checkout.razorpay.com/v1/checkout.js');
       
-      // Create order first
-      const orderId = await createOrder(finalTotal - shippingCost);
-      
-      if (!orderId) {
-        console.error('Failed to create order for Razorpay payment');
-        setIsProcessing(false);
-        return;
-      }
-      
-      console.log('Order created successfully:', orderId);
-      
-      // Ensure customer info is available
-      if (!customerInfo) {
+      if (!res) {
         toast({
-          title: 'Error',
-          description: 'Customer information is missing',
-          variant: 'destructive',
+          title: "Razorpay Error",
+          description: "Razorpay SDK failed to load. Please try again.",
+          variant: "destructive"
         });
         setIsProcessing(false);
         return;
       }
       
-      // Process payment using the razorpayService
-      await processPayment(
-        finalTotal,
-        orderId,
-        {
-          name: customerInfo.name,
-          email: customerInfo.email,
-          phone: customerInfo.phone
-        },
-        (response) => {
-          // Success callback
-          console.log('Payment successful:', response);
-          handlePaymentSuccess(response, orderId);
-        },
-        (error) => {
-          // Failure callback
-          console.error('Payment failed:', error);
-          toast({
-            title: "Payment Error",
-            description: error.message || "Failed to process payment. Please try again.",
-            variant: "destructive"
-          });
-          setIsProcessing(false);
-        }
-      );
+      // Create order
+      const orderId = await createOrder(finalTotal - shippingCost);
       
+      if (!orderId) {
+        setIsProcessing(false);
+        return;
+      }
+      
+      // Process payment
+      const { success, data } = await processPayment({
+        amount: finalTotal,
+        orderId,
+        customerName: customerInfo.name,
+        customerEmail: customerInfo.email,
+        customerPhone: customerInfo.phone,
+        paymentMethod: 'razorpay'
+      });
+      
+      if (success && data) {
+        const options = {
+          key: import.meta.env.VITE_RAZORPAY_KEY_ID,
+          amount: finalTotal * 100,
+          currency: 'INR',
+          name: 'Natural Puff',
+          description: `Payment for order #${orderId}`,
+          order_id: data.id,
+          handler: async function(response: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string; }, orderId: string) {
+            await handlePaymentSuccess(response, orderId);
+          }.bind(null, orderId),
+          prefill: {
+            name: customerInfo.name,
+            email: customerInfo.email,
+            contact: customerInfo.phone
+          },
+          notes: {
+            order_id: orderId
+          },
+          theme: {
+            color: '#3399cc'
+          }
+        };
+        
+        const paymentObject = new (window as any).Razorpay(options);
+        paymentObject.open();
+      } else {
+        toast({
+          title: "Payment Error",
+          description: "Failed to initiate payment. Please try again.",
+          variant: "destructive"
+        });
+      }
     } catch (error: any) {
-      console.error('Error in Razorpay payment:', error);
+      console.error('Error initiating payment:', error);
       toast({
         title: "Payment Error",
-        description: error.message || "Failed to process payment. Please try again.",
+        description: error.message || "Failed to initiate payment. Please try again.",
         variant: "destructive"
       });
+    } finally {
       setIsProcessing(false);
     }
   };
@@ -380,11 +388,6 @@ const Checkout = () => {
   // Create order
   const createOrder = async (amount: number) => {
     try {
-      console.log('Creating order with amount:', amount);
-      console.log('Customer info:', customerInfo);
-      console.log('Selected courier:', selectedCourier);
-      console.log('Shipping cost:', shippingCost);
-      
       if (!customerInfo) {
         toast({
           title: 'Error',
@@ -409,53 +412,38 @@ const Checkout = () => {
         product_id: item.id,
         quantity: item.quantity,
         price: item.price,
-        product_name: item.name, // Use product_name instead of name to match the schema
-        image_url: item.image_url || ''
+        name: item.name,
+        image_url: item.image_url
       }));
-      
-      console.log('Order items:', orderItems);
-      
-      // Get selected courier info
-      const selectedCourierInfo = courierOptions.find((c: any) => c.courier_code === selectedCourier) || {
-        courier_name: 'Standard Delivery',
-        rate: shippingCost,
-        etd: '3-5 days'
-      };
-      
-      console.log('Selected courier info:', selectedCourierInfo);
-      
-      // Simplified order creation to avoid potential issues
-      const orderData = {
-        total_amount: finalTotal,
-        user_id: user?.id || null,
-        shipping_address: JSON.stringify({
-          name: customerInfo.name,
-          address: customerInfo.address,
-          city: customerInfo.city,
-          state: customerInfo.state,
-          pincode: customerInfo.pincode,
-          email: customerInfo.email,
-          phone: customerInfo.phone,
-          shipping_cost: shippingCost,
-          courier_name: selectedCourierInfo.courier_name
-        }),
-        status: 'pending'
-      };
-      
-      console.log('Order data being inserted:', orderData);
       
       // Create order in database
       const { data, error } = await supabase
         .from('orders')
-        .insert(orderData)
+        .insert({
+          total_amount: finalTotal,
+          user_id: user?.id || null,
+          shipping_address: {
+            name: customerInfo.name,
+            address: customerInfo.address,
+            city: customerInfo.city,
+            state: customerInfo.state,
+            pincode: customerInfo.pincode,
+            email: customerInfo.email,
+            phone: customerInfo.phone,
+            payment_method: paymentMethod,
+            shipping_cost: shippingCost,
+            subtotal: subtotal,
+            discount: discountAmount,
+            courier: courierOptions.find(c => c.courier_company_id === selectedCourier)
+          },
+          status: 'pending'
+        })
         .select()
         .single();
       
       if (error) {
-        console.error('Error inserting order:', error);
         // Check for RLS policy error
         if (error.message.includes('policy')) {
-          console.log('RLS policy error detected');
           setShowRLSError(true);
           return null;
         }
@@ -464,32 +452,20 @@ const Checkout = () => {
       }
       
       if (data) {
-        console.log('Order created successfully:', data);
-        
         // Insert order items
-        try {
-          const orderItemsWithId = orderItems.map(item => ({
-            order_id: data.id,
-            product_id: item.product_id,
-            quantity: item.quantity,
-            price: item.price,
-            product_name: item.product_name
-          }));
-          
-          console.log('Inserting order items:', orderItemsWithId);
-          
-          const { error: itemsError } = await supabase
-            .from('order_items')
-            .insert(orderItemsWithId);
-          
-          if (itemsError) {
-            console.error('Error inserting order items:', itemsError);
-            // Continue even if order items insertion fails
-            // We'll handle this case better
-          }
-        } catch (itemsError) {
-          console.error('Error in order items insertion:', itemsError);
-          // Continue with the order even if items insertion fails
+        const { error: itemsError } = await supabase
+          .from('order_items')
+          .insert(
+            orderItems.map(item => ({
+              order_id: data.id,
+              ...item
+            }))
+          );
+        
+        if (itemsError) {
+          setShowRLSError(true);
+          setIsProcessing(false);
+          return null;
         }
         
         toast({
@@ -593,12 +569,7 @@ const Checkout = () => {
       <h1 className="text-3xl font-bold mb-8">Checkout</h1>
       
       {showRLSError && (
-        <Alert variant="destructive" className="mb-4">
-          <AlertTitle>Database Permission Error</AlertTitle>
-          <AlertDescription>
-            There was an issue with database permissions. Please try again or contact support.
-          </AlertDescription>
-        </Alert>
+        <DirectPermissionFix onFix={() => Promise.resolve(true)} />
       )}
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -610,9 +581,9 @@ const Checkout = () => {
               </CardHeader>
               <CardContent>
                 <CheckoutForm 
-                  onFormSubmit={handleFormSubmit}
-                  initialData={customerInfo}
-                  isSubmitting={isProcessing}
+                  onSubmit={handleFormSubmit}
+                  initialValues={customerInfo}
+                  isProcessing={isProcessing}
                 />
               </CardContent>
             </Card>
@@ -623,203 +594,40 @@ const Checkout = () => {
               </CardHeader>
               <CardContent>
                 {pincode && (
-                  <div className="mb-6 border rounded-lg p-4 bg-gray-50">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-md font-medium">Shipping Options</h3>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-muted-foreground">Delivering to:</span>
-                        <span className="font-medium text-sm bg-white px-2 py-1 rounded border">{pincode}</span>
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-4">
-                      <div className="flex items-center space-x-2">
-                        <div className="flex-grow">
-                          <Input
-                            type="text"
-                            placeholder="Enter delivery pincode"
-                            value={pincode}
-                            onChange={(e) => {
-                              // Only allow numbers and limit to 6 digits
-                              const value = e.target.value.replace(/[^0-9]/g, '').substring(0, 6);
-                              setPincode(value);
-                              
-                              // Reset selection if pincode changes
-                              if (value.length !== 6) {
-                                setSelectedCourier('');
-                                setShippingCost(0);
-                                setCourierOptions([]);
-                              }
-                            }}
-                            className="w-full"
-                            maxLength={6}
-                          />
-                        </div>
-                        <Button 
-                          onClick={() => {
-                            if (!pincode || pincode.length !== 6) {
-                              toast({
-                                title: "Invalid Pincode",
-                                description: "Please enter a valid 6-digit pincode.",
-                                variant: "destructive"
-                              });
-                              return;
-                            }
-                            
-                            // Directly use hardcoded shipping options
-                            const mockCourierOptions = [
-                              {
-                                courier_name: "DTDC",
-                                courier_code: "1",
-                                rate: 120,
-                                etd: "2-3 days",
-                                serviceability_type: "surface"
-                              },
-                              {
-                                courier_name: "Delhivery",
-                                courier_code: "2",
-                                rate: 150,
-                                etd: "1-2 days",
-                                serviceability_type: "air"
-                              }
-                            ];
-                            
-                            setCourierOptions(mockCourierOptions);
-                            // Auto-select the first courier option
-                            setSelectedCourier(mockCourierOptions[0].courier_code);
-                            setShippingCost(mockCourierOptions[0].rate);
-                            
-                            toast({
-                              title: "Delivery Available",
-                              description: "We can deliver to your location.",
-                              variant: "default"
-                            });
-                          }}
-                          className="whitespace-nowrap"
-                        >
-                          <MapPin className="mr-2 h-4 w-4" />
-                          Check Availability
-                        </Button>
-                      </div>
-                      
-                      {selectedCourier && (
-                        <div className="space-y-2">
-                          <p className="font-medium">Available Shipping Options:</p>
-                          <RadioGroup value={selectedCourier} onValueChange={(value) => {
-                            setSelectedCourier(value);
-                            const option = courierOptions.find(opt => opt.courier_code === value);
-                            if (option) {
-                              setShippingCost(option.rate);
-                            }
-                          }}>
-                            {courierOptions.map((option) => (
-                              <div key={option.courier_code} className="flex items-center space-x-2 p-2 border rounded-md">
-                                <RadioGroupItem value={option.courier_code} id={`courier-${option.courier_code}`} />
-                                <Label htmlFor={`courier-${option.courier_code}`} className="flex-grow cursor-pointer">
-                                  <div className="flex justify-between items-center w-full">
-                                    <div>
-                                      <p className="font-medium">{option.courier_name}</p>
-                                      <p className="text-sm text-gray-500">{option.etd}</p>
-                                    </div>
-                                    <p className="font-medium">₹{option.rate.toFixed(2)}</p>
-                                  </div>
-                                </Label>
-                              </div>
-                            ))}
-                          </RadioGroup>
-                        </div>
-                      )}
-                    </div>
+                  <div className="mb-6">
+                    <ShiprocketServiceabilityChecker 
+                      pincode={pincode}
+                      onServiceabilityCheck={(serviceability) => {
+                        setPincode(serviceability.pincode);
+                        setShippingCost(serviceability.shippingCost);
+                        setSelectedCourier(serviceability.selectedCourier);
+                        setCourierOptions(serviceability.courierOptions);
+                      }}
+                    />
                   </div>
                 )}
                 
                 <div className="space-y-4">
-                  <h3 className="font-medium text-lg">Payment Method</h3>
+                  <h3 className="font-medium">Payment Method</h3>
                   <RadioGroup
                     value={paymentMethod}
                     onValueChange={setPaymentMethod}
-                    className="space-y-3"
+                    className="space-y-2"
                   >
-                    <div className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50 transition-colors">
+                    <div className="flex items-center space-x-2">
                       <RadioGroupItem value="cod" id="cod" />
-                      <Label htmlFor="cod" className="flex items-center gap-2 cursor-pointer">
-                        <div className="bg-amber-100 p-2 rounded-full">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-600">
-                            <rect width="20" height="16" x="2" y="4" rx="2" />
-                            <circle cx="12" cy="12" r="4" />
-                            <path d="M12 8v8" />
-                            <path d="M8 12h8" />
-                          </svg>
-                        </div>
-                        <div>
-                          <span className="font-medium">Cash on Delivery</span>
-                          <p className="text-xs text-muted-foreground">Pay when your order arrives</p>
-                        </div>
-                      </Label>
+                      <Label htmlFor="cod">Cash on Delivery</Label>
                     </div>
-                    
-                    <div className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50 transition-colors">
+                    <div className="flex items-center space-x-2">
                       <RadioGroupItem value="razorpay" id="razorpay" />
-                      <Label htmlFor="razorpay" className="flex items-center gap-2 cursor-pointer">
-                        <div className="bg-blue-100 p-2 rounded-full">
-                          <CreditCard className="h-5 w-5 text-blue-600" />
-                        </div>
-                        <div>
-                          <span className="font-medium">Pay Online</span>
-                          <p className="text-xs text-muted-foreground">Credit/Debit Cards, Net Banking, Wallets</p>
-                        </div>
-                      </Label>
+                      <Label htmlFor="razorpay">Pay Online (Credit/Debit Card, Wallets)</Label>
                     </div>
-                    
-                    <div className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50 transition-colors">
+                    <div className="flex items-center space-x-2">
                       <RadioGroupItem value="upi_direct" id="upi_direct" />
-                      <Label htmlFor="upi_direct" className="flex items-center gap-2 cursor-pointer">
-                        <div className="bg-green-100 p-2 rounded-full">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-600">
-                            <path d="m8 7 4-4 4 4" />
-                            <path d="M12 3v10" />
-                            <path d="M8 17a4 4 0 1 0 8 0" />
-                          </svg>
-                        </div>
-                        <div>
-                          <span className="font-medium">UPI Payment</span>
-                          <p className="text-xs text-muted-foreground">PhonePe, Google Pay, Paytm & more</p>
-                        </div>
-                      </Label>
+                      <Label htmlFor="upi_direct">Pay with UPI (PhonePe, Google Pay, Paytm)</Label>
+                      <CreditCard className="h-5 w-5 text-brand-600 ml-auto" />
                     </div>
                   </RadioGroup>
-                  
-                  {paymentMethod === 'upi_direct' && (
-                    <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                      <h4 className="text-sm font-medium mb-2">Select UPI App</h4>
-                      <div className="grid grid-cols-3 gap-2">
-                        <Button 
-                          variant={upiApp === 'phonepe' ? 'default' : 'outline'}
-                          className="flex flex-col items-center justify-center h-20 p-2"
-                          onClick={() => setUpiApp('phonepe')}
-                        >
-                          <img src="/images/phonepe.png" alt="PhonePe" className="h-8 w-8 mb-1" />
-                          <span className="text-xs">PhonePe</span>
-                        </Button>
-                        <Button 
-                          variant={upiApp === 'gpay' ? 'default' : 'outline'}
-                          className="flex flex-col items-center justify-center h-20 p-2"
-                          onClick={() => setUpiApp('gpay')}
-                        >
-                          <img src="/images/gpay.png" alt="Google Pay" className="h-8 w-8 mb-1" />
-                          <span className="text-xs">Google Pay</span>
-                        </Button>
-                        <Button 
-                          variant={upiApp === 'paytm' ? 'default' : 'outline'}
-                          className="flex flex-col items-center justify-center h-20 p-2"
-                          onClick={() => setUpiApp('paytm')}
-                        >
-                          <img src="/images/paytm.png" alt="Paytm" className="h-8 w-8 mb-1" />
-                          <span className="text-xs">Paytm</span>
-                        </Button>
-                      </div>
-                    </div>
-                  )}
                 </div>
                 
                 <div className="pt-4 flex flex-wrap gap-2">
@@ -872,25 +680,13 @@ const Checkout = () => {
               <div className="space-y-4">
                 {items.length > 0 ? (
                   items.map((item) => (
-                    <div key={item.id} className="flex justify-between items-center py-2">
-                      <div className="flex items-center gap-3">
-                        {item.image_url && (
-                          <img 
-                            src={item.image_url} 
-                            alt={item.name} 
-                            className="h-16 w-16 object-cover rounded-md border border-gray-200"
-                          />
-                        )}
+                    <div key={item.id} className="flex justify-between items-center">
+                      <div className="flex items-center gap-2">
                         <div>
                           <p className="font-medium">{item.name}</p>
                           <p className="text-sm text-muted-foreground">
                             ₹{item.price} x {item.quantity}
                           </p>
-                          {item.variant && (
-                            <p className="text-xs text-muted-foreground">
-                              Variant: {item.variant}
-                            </p>
-                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -938,9 +734,9 @@ const Checkout = () => {
                       onChange={(e) => setCouponCode(e.target.value)}
                       className="flex-1"
                     />
-                    {isCouponLoading || cartAppliedCoupon ? (
+                    {isCouponLoading || appliedCoupon ? (
                       <div>
-                        {cartAppliedCoupon ? (
+                        {appliedCoupon ? (
                           <Button
                             onClick={handleRemoveCoupon}
                             disabled={isCouponLoading}
@@ -968,12 +764,12 @@ const Checkout = () => {
                 
                 <div className="flex justify-between">
                   <p>Subtotal</p>
-                  <p className="font-medium">₹{totalPrice.toFixed(2)}</p>
+                  <p className="font-medium">₹{subtotal.toFixed(2)}</p>
                 </div>
                 
-                {cartAppliedCoupon && (
+                {appliedCoupon && (
                   <div className="flex justify-between text-green-600">
-                    <p>Discount ({cartAppliedCoupon.discount_percent}%)</p>
+                    <p>Discount ({appliedCoupon.discount_percent}%)</p>
                     <p className="font-medium">-₹{discountAmount.toFixed(2)}</p>
                   </div>
                 )}

@@ -2,18 +2,22 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 
+import { CustomerInfo } from '@/types/product';
+
 interface DirectUpiHandlerProps {
   orderId: string;
   amount: number;
-  customerName: string;
-  onComplete: () => void;
+  customerInfo: CustomerInfo;
+  onSuccess: () => void;
+  onCancel: () => void;
 }
 
 const DirectUpiHandler: React.FC<DirectUpiHandlerProps> = ({
   orderId,
   amount,
-  customerName,
-  onComplete
+  customerInfo,
+  onSuccess,
+  onCancel
 }) => {
   // UPI payment options with their IDs
   const upiOptions = [
@@ -32,7 +36,7 @@ const DirectUpiHandler: React.FC<DirectUpiHandlerProps> = ({
       const txnRef = `order_${orderId}_${Date.now()}`;
       
       // Create UPI payment URL
-      const upiUrl = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=NaturalPuff&am=${formattedAmount}&cu=INR&tn=${encodeURIComponent(`Order ${orderId} - ${customerName}`)}&tr=${encodeURIComponent(txnRef)}`;
+      const upiUrl = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=NaturalPuff&am=${formattedAmount}&cu=INR&tn=${encodeURIComponent(`Order ${orderId} - ${customerInfo.name}`)}&tr=${encodeURIComponent(txnRef)}`;
       
       console.log(`Opening ${appName} payment with URL:`, upiUrl);
       
@@ -46,14 +50,19 @@ const DirectUpiHandler: React.FC<DirectUpiHandlerProps> = ({
       }));
       
       // Update order with payment attempt info
-      await supabase
-        .from('orders')
-        .update({
-          payment_method: 'upi_direct',
-          payment_status: 'initiated',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', orderId);
+      try {
+        await supabase
+          .from('orders')
+          .update({
+            status: 'payment_initiated',
+            payment_id: txnRef,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', orderId);
+      } catch (dbError) {
+        console.error('Error updating order status:', dbError);
+        // Continue with payment even if DB update fails
+      }
       
       // Open the UPI URL
       window.location.href = upiUrl;
@@ -66,7 +75,12 @@ const DirectUpiHandler: React.FC<DirectUpiHandlerProps> = ({
 
   return (
     <div className="bg-white p-4 rounded-lg shadow-md">
-      <h3 className="text-lg font-medium mb-4">Choose UPI App</h3>
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-lg font-medium">Choose UPI App</h3>
+        <Button variant="ghost" size="sm" onClick={onCancel}>
+          <span className="text-sm">Cancel</span>
+        </Button>
+      </div>
       
       <div className="grid grid-cols-3 gap-4 mb-6">
         {upiOptions.map(option => (
