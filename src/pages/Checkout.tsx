@@ -208,9 +208,12 @@ const Checkout = () => {
     try {
       console.log('Starting payment process for order:', orderId);
       
+      // Calculate total with shipping cost
+      const totalWithShipping = finalTotal + shippingCost;
+      
       // Use our new simplified payment process function
       await processPayment(
-        finalTotal,
+        totalWithShipping, // Include shipping cost in payment amount
         orderId,
         {
           name: customerInfo.name,
@@ -590,9 +593,10 @@ const Checkout = () => {
             body: JSON.stringify({
               orderId: order.id,
               customerName: customerInfo.name,
-              amount: finalTotal,
+              amount: finalTotal + shippingCost, // Include shipping cost in the total
               email: customerInfo.email,
               phone: customerInfo.phone,
+              shippingCost: shippingCost,
               items: items.map(item => ({
                 name: item.name,
                 quantity: item.quantity,
