@@ -182,17 +182,39 @@ export const openRazorpayCheckout = (
       throw new Error('Razorpay is not loaded. Please call loadRazorpayScript first.');
     }
     
+    // Store payment initiation status to prevent duplicate callbacks
+    const paymentKey = `payment_${Date.now()}`;
+    window.localStorage.setItem(paymentKey, 'initiated');
+    
+    // Wrap callbacks to ensure they're only called once
+    const safeSuccess = (response: any) => {
+      const status = window.localStorage.getItem(paymentKey);
+      if (status !== 'completed') {
+        window.localStorage.setItem(paymentKey, 'completed');
+        console.log('Payment successful:', response);
+        onSuccess(response);
+      }
+    };
+    
+    const safeFailure = (error: any) => {
+      const status = window.localStorage.getItem(paymentKey);
+      if (status !== 'failed' && status !== 'completed') {
+        window.localStorage.setItem(paymentKey, 'failed');
+        console.error('Payment failed:', error);
+        onFailure(error);
+      }
+    };
+    
     // Create Razorpay instance with improved mobile handling
     const razorpay = new window.Razorpay({
       ...options,
       handler: function(response: any) {
-        console.log('Payment successful:', response);
-        onSuccess(response);
+        safeSuccess(response);
       },
       modal: {
         ondismiss: function() {
           console.log('Payment window closed by user');
-          onFailure(new Error('Payment cancelled by user'));
+          safeFailure(new Error('Payment cancelled by user'));
         },
         escape: false,  // Prevent escape key from closing modal
         confirm_close: true, // Ask for confirmation when closing
@@ -213,16 +235,26 @@ export const openRazorpayCheckout = (
     
     // Add payment failure handler
     razorpay.on('payment.failed', function(response: any) {
-      console.error('Payment failed:', response.error);
-      onFailure(response.error);
+      safeFailure(response.error);
+    });
+    
+    // Clean up old payment keys (from previous sessions)
+    Object.keys(window.localStorage).forEach(key => {
+      if (key.startsWith('payment_') && key !== paymentKey) {
+        const timestamp = parseInt(key.split('_')[1]);
+        const now = Date.now();
+        // Remove keys older than 1 hour
+        if (now - timestamp > 3600000) {
+          window.localStorage.removeItem(key);
+        }
+      }
     });
     
     // Open checkout with a longer delay to ensure everything is ready
-    // Increasing the delay to 1500ms to give more time for initialization
     setTimeout(() => {
       console.log('Opening Razorpay checkout window...');
       razorpay.open();
-    }, 1500);
+    }, 2000); // Increased delay to 2 seconds
   } catch (error) {
     console.error('Error opening Razorpay checkout:', error);
     onFailure(error);
@@ -281,112 +313,75 @@ export const processPayment = async (
   onSuccess: (response: any) => void,
   onFailure: (error: any) => void
 ): Promise<void> => {
-  // Create a global variable to track payment status
-  const paymentStatusKey = `payment_status_${orderId}`;
-  window.localStorage.setItem(paymentStatusKey, 'pending');
+  // Create a unique payment tracking ID for this payment attempt
+  const paymentTrackingId = `payment_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   
-  // Store the success and failure callbacks globally so they can be called from anywhere
-  window.__razorpayCallbacks = window.__razorpayCallbacks || {};
-  window.__razorpayCallbacks[orderId] = {
-    success: onSuccess,
-    failure: onFailure
-  };
+  // Store this payment attempt in localStorage
+  localStorage.setItem(paymentTrackingId, JSON.stringify({
+    orderId,
+    status: 'pending',
+    amount: amount,
+    timestamp: Date.now()
+  }));
   
-  // Create a function to handle UPI app returns
-  window.handleUpiReturn = window.handleUpiReturn || function(orderId: string) {
-    console.log('UPI return handler called for order:', orderId);
-    const status = window.localStorage.getItem(`payment_status_${orderId}`);
-    
-    if (status === 'pending') {
-      // Show a processing overlay to prevent user interaction
-      const overlay = document.createElement('div');
-      overlay.id = 'payment-processing-overlay';
-      overlay.style.position = 'fixed';
-      overlay.style.top = '0';
-      overlay.style.left = '0';
-      overlay.style.width = '100%';
-      overlay.style.height = '100%';
-      overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-      overlay.style.zIndex = '9999';
-      overlay.style.display = 'flex';
-      overlay.style.flexDirection = 'column';
-      overlay.style.alignItems = 'center';
-      overlay.style.justifyContent = 'center';
-      overlay.style.color = 'white';
-      overlay.innerHTML = `
-        <div style="background-color: white; padding: 20px; border-radius: 8px; text-align: center; max-width: 80%;">
-          <h3 style="color: #333; margin-bottom: 15px;">Verifying Payment</h3>
-          <p style="color: #666; margin-bottom: 20px;">Please wait while we verify your payment...</p>
-          <div style="width: 50px; height: 50px; border: 5px solid #f3f3f3; border-top: 5px solid #167152; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;"></div>
-        </div>
-        <style>
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-        </style>
-      `;
-      document.body.appendChild(overlay);
-      
-      // Check payment status with server
-      console.log('Checking payment status with server...');
-      setTimeout(() => {
-        checkPaymentStatus(orderId, 
-          // Success callback
-          (response) => {
-            console.log('Payment verification successful:', response);
-            window.localStorage.setItem(paymentStatusKey, 'success');
-            if (window.__razorpayCallbacks && window.__razorpayCallbacks[orderId]) {
-              window.__razorpayCallbacks[orderId].success(response);
-              delete window.__razorpayCallbacks[orderId];
-            }
-            // Remove overlay
-            document.body.removeChild(overlay);
-          },
-          // Failure callback
-          (error) => {
-            console.log('Payment verification failed:', error);
-            window.localStorage.setItem(paymentStatusKey, 'failed');
-            if (window.__razorpayCallbacks && window.__razorpayCallbacks[orderId]) {
-              window.__razorpayCallbacks[orderId].failure(error);
-              delete window.__razorpayCallbacks[orderId];
-            }
-            // Remove overlay
-            document.body.removeChild(overlay);
-          }
-        );
-      }, 2000);
-    }
-  };
-  
-  // Set up visibility change listener for UPI apps
-  const visibilityHandler = () => {
-    if (!document.hidden && window.localStorage.getItem(paymentStatusKey) === 'pending') {
-      console.log('User returned from UPI app, triggering payment check...');
-      window.handleUpiReturn(orderId);
-    }
-  };
-  
-  document.addEventListener('visibilitychange', visibilityHandler);
-  
-  // Clean up function
-  const cleanup = () => {
-    document.removeEventListener('visibilitychange', visibilityHandler);
-    // Don't remove the localStorage item so we can check it later if needed
-  };
-  
-  // Wrapped callbacks
+  // Create wrapped callbacks that ensure they're only called once
   const wrappedSuccess = (response: any) => {
-    window.localStorage.setItem(paymentStatusKey, 'success');
-    cleanup();
-    onSuccess(response);
+    // Get current payment data
+    const paymentDataStr = localStorage.getItem(paymentTrackingId);
+    if (!paymentDataStr) return;
+    
+    const paymentData = JSON.parse(paymentDataStr);
+    
+    // Only proceed if payment is still pending
+    if (paymentData.status === 'pending') {
+      // Update payment status
+      paymentData.status = 'success';
+      paymentData.response = response;
+      localStorage.setItem(paymentTrackingId, JSON.stringify(paymentData));
+      
+      // Call the original success callback
+      console.log('Payment successful:', response);
+      onSuccess(response);
+    }
   };
   
   const wrappedFailure = (error: any) => {
-    window.localStorage.setItem(paymentStatusKey, 'failed');
-    cleanup();
-    onFailure(error);
+    // Get current payment data
+    const paymentDataStr = localStorage.getItem(paymentTrackingId);
+    if (!paymentDataStr) return;
+    
+    const paymentData = JSON.parse(paymentDataStr);
+    
+    // Only proceed if payment is still pending
+    if (paymentData.status === 'pending') {
+      // Update payment status
+      paymentData.status = 'failed';
+      paymentData.error = error?.message || 'Unknown error';
+      localStorage.setItem(paymentTrackingId, JSON.stringify(paymentData));
+      
+      // Call the original failure callback
+      console.error('Payment failed:', error);
+      onFailure(error);
+    }
   };
+  
+  // Clean up old payment tracking entries
+  Object.keys(localStorage).forEach(key => {
+    if (key.startsWith('payment_') && key !== paymentTrackingId) {
+      try {
+        const data = JSON.parse(localStorage.getItem(key) || '{}');
+        const timestamp = data.timestamp || 0;
+        
+        // Remove entries older than 1 hour
+        if (Date.now() - timestamp > 3600000) {
+          localStorage.removeItem(key);
+        }
+      } catch (e) {
+        // If we can't parse it, just remove it
+        localStorage.removeItem(key);
+      }
+    }
+  });
   
   try {
     console.log('Starting direct payment process for order:', orderId);
@@ -458,17 +453,19 @@ export const processPayment = async (
           openRazorpayCheckout(options, wrappedSuccess, wrappedFailure);
           console.log('Razorpay checkout opened successfully');
           
-          // Set a backup timer for mobile UPI apps that might not trigger callbacks
+          // Create a backup timer for mobile UPI apps that might not trigger callbacks
           const backupTimer = setTimeout(() => {
-            const currentStatus = window.localStorage.getItem(paymentStatusCheckId);
-            if (currentStatus === 'pending') {
-              console.log('Payment status still pending after timeout, checking with server...');
-              checkPaymentStatus(orderId, wrappedSuccess, wrappedFailure);
+            // Check if payment is still pending
+            const paymentDataStr = localStorage.getItem(paymentTrackingId);
+            if (paymentDataStr) {
+              const paymentData = JSON.parse(paymentDataStr);
+              if (paymentData.status === 'pending') {
+                console.log('Payment status still pending after timeout, checking with server...');
+                // Just fail the payment after timeout
+                wrappedFailure(new Error('Payment timed out. Please try again.'));
+              }
             }
           }, 60000); // 1 minute backup timer
-          
-          // Store the backup timer ID so it can be cleared if needed
-          window.localStorage.setItem(`${paymentStatusCheckId}_timer`, backupTimer.toString());
           
           resolve();
         } catch (err) {

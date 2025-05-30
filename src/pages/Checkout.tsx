@@ -15,7 +15,7 @@ import { CustomerInfo, Coupon } from '@/types/product';
 import CheckoutForm from '@/components/checkout/CheckoutForm';
 import ShiprocketServiceabilityChecker from '@/components/checkout/ShiprocketServiceability';
 import { processPayment } from '@/services/razorpayService';
-import DirectUpiPayment from '@/components/DirectUpiPayment';
+import DirectUpiHandler from '@/components/DirectUpiHandler';
 import { loadScript } from '@/lib/utils';
 import OrderPolicyError from '@/components/layout/OrderPolicyError';
 import DirectPermissionFix from '@/components/admin/DirectPermissionFix';
@@ -38,6 +38,10 @@ const Checkout = () => {
   const [pincode, setPincode] = useState('');
   const [isRazorpayReady, setIsRazorpayReady] = useState(false);
   const [courierOptions, setCourierOptions] = useState<{courier_code: string; courier_name: string}[]>([]);
+  
+  // UPI payment state
+  const [showUpiPayment, setShowUpiPayment] = useState(false);
+  const [currentOrderId, setCurrentOrderId] = useState<string>('');
   
   // Coupon state
   const [couponCode, setCouponCode] = useState('');
@@ -280,7 +284,74 @@ const handleFormSubmit = (formData: CustomerInfo) => {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 
-// Completely rewritten payment handler using our new simplified service
+// Handle UPI direct payment
+const handleUpiDirectPayment = async () => {
+  setIsProcessing(true);
+
+  try {
+    if (!customerInfo) {
+      toast({
+        title: 'Error',
+        description: 'Please enter your information first',
+        variant: 'destructive',
+      });
+      setIsProcessing(false);
+      return false;
+    }
+
+    // Create order in database
+    const orderId = await createOrder(finalTotal + shippingCost);
+
+    if (!orderId) {
+      setIsProcessing(false);
+      return false;
+    }
+
+    // Update order with payment method
+    
+    // Set UPI ID based on selected option
+    let upiId = 'naturalpuff@ybl'; // Replace with your actual UPI ID
+    
+    // Format amount to 2 decimal places
+    const formattedAmount = totalWithShipping.toFixed(2);
+    
+    // Generate transaction reference
+    const txnRef = `order_${orderId}_${Date.now()}`;
+    
+    // Create UPI payment URL
+    const upiUrl = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=NaturalPuff&am=${formattedAmount}&cu=INR&tn=${encodeURIComponent(`Payment for order #${orderId}`)}&tr=${encodeURIComponent(txnRef)}`;
+    
+    console.log(`Opening ${upiApp} payment with URL:`, upiUrl);
+    
+    // Store order info in localStorage for verification after return
+    localStorage.setItem('np_current_payment', JSON.stringify({
+      orderId,
+      amount: formattedAmount,
+      txnRef,
+      timestamp: Date.now(),
+      paymentApp: upiApp
+    }));
+    
+    // Update order with payment attempt info
+    await supabase
+      .from('orders')
+      .update({
+        payment_method: 'upi_direct',
+        payment_status: 'initiated',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', orderId);
+    
+    // Open the UPI URL
+    window.location.href = upiUrl;
+    
+  } catch (error: any) {
+    console.error('Error initiating UPI payment:', error);
+    handlePaymentFailure(orderId, error.message || 'Failed to initiate UPI payment');
+  }
+};
+
+// Handle Razorpay payment
 const handleRazorpayPayment = async (orderId: string) => {
   if (!customerInfo) {
     toast({
@@ -298,71 +369,20 @@ const handleRazorpayPayment = async (orderId: string) => {
     // Calculate total with shipping for payment
     const totalWithShipping = finalTotal + shippingCost;
     
-    // Check if we need to handle UPI payment directly
-    const isUpiSelected = document.querySelector('input[name="upi-option"]:checked');
-    const selectedUpiOption = isUpiSelected?.getAttribute('data-upi-option');
-    
-    if (selectedUpiOption && selectedUpiOption !== 'other') {
-      // Use direct UPI payment for specific UPI apps
-      let upiId = '';
-      
-      // Set UPI ID based on selected option
-      switch (selectedUpiOption) {
-        case 'phonepe':
-          upiId = 'naturalpuff@ybl'; // Replace with your actual PhonePe UPI ID
-          break;
-        case 'gpay':
-          upiId = 'naturalpuff@okicici'; // Replace with your actual Google Pay UPI ID
-          break;
-        case 'paytm':
-          upiId = 'naturalpuff@paytm'; // Replace with your actual Paytm UPI ID
-          break;
-        default:
-          upiId = 'naturalpuff@ybl'; // Default UPI ID
-      }
-      
-      console.log(`Using direct UPI payment with ${selectedUpiOption} to ${upiId}`);
-      
-      // Store order ID in localStorage for verification after return
-      localStorage.setItem('last_order_id', orderId);
-      localStorage.setItem('payment_method', selectedUpiOption);
-      localStorage.setItem('payment_amount', totalWithShipping.toString());
-      localStorage.setItem('payment_timestamp', Date.now().toString());
-      
-      // Use direct UPI payment
-      await directUpiPayment(
-        totalWithShipping,
-        orderId,
-        upiId,
-        () => {
-          // This won't be called immediately since the page will reload
-          // We'll handle success in componentDidMount or useEffect
-        },
-        (error) => handlePaymentFailure(orderId, error.message || 'Direct UPI payment failed')
-            setIsProcessing(false);
-            return;
-          }
-          
-          handlePaymentSuccess({
-            razorpay_payment_id: response.razorpay_payment_id,
-            razorpay_order_id: response.razorpay_order_id,
-            razorpay_signature: response.razorpay_signature,
-          }, orderId);
-        },
-        // Failure handler
-        (error) => {
-          console.error('Payment failed:', error);
-          handlePaymentFailure(orderId, error.message || "Payment failed. Please try again later.");
-          setIsProcessing(false);
-        }
-      );
-      
-      return true;
-    } catch (error: any) {
-      console.error('Payment error:', error);
-      handlePaymentFailure(orderId, error.message || "Failed to initialize payment. Please try again later.");
-      setIsProcessing(false);
-      return false;
+    // Process payment
+    await processPayment(
+      totalWithShipping, // Include shipping cost in payment amount
+      orderId,
+      {
+        name: customerInfo.name,
+        email: customerInfo.email,
+        phone: customerInfo.phone
+      },
+      handlePaymentSuccess,
+      (error) => handlePaymentFailure(orderId, error.message || 'Payment failed')
+    );
+  } catch (error: any) {
+    console.error('Error initiating payment:', error);
     }
   };
 
@@ -630,68 +650,82 @@ const handleRazorpayPayment = async (orderId: string) => {
         variant: 'destructive'
       });
       return false;
-    }
-  };
   
-  // Place order
-  const handlePlaceOrder = async () => {
+  try {
+    // Validate customer information
     if (!customerInfo) {
       toast({
-        title: "Error",
-        description: "Please fill in your information first.",
-        variant: "destructive"
+        title: 'Error',
+        description: 'Please enter your information first',
+        variant: 'destructive',
       });
-      setCheckoutStep(1);
+      setIsProcessing(false);
       return;
     }
     
-    if (!selectedCourier || shippingCost === 0) {
+    // Validate shipping cost
+    if (selectedCourier === '' || shippingCost <= 0) {
       toast({
-        title: "Error",
-        description: "Please select a shipping method.",
-        variant: "destructive"
+        title: 'Error',
+        description: 'Please select a shipping method',
+        variant: 'destructive',
       });
+      setIsProcessing(false);
       return;
     }
     
-    setIsProcessing(true);
+    // Create order in database
+    const orderItems = items.map(item => ({
+      product_id: item.id,
+      quantity: item.quantity,
+      price: item.price,
+      name: item.name,
+      image_url: item.image_url
+    }));
     
-    try {
-      // Create order in database
-      const orderItems = items.map(item => ({
-        product_id: item.id,
-        quantity: item.quantity,
-        price: item.price,
-        name: item.name,
-        image_url: item.image_url
-      }));
+    // Prepare the order data with only essential fields that are definitely in the database schema
+    const orderData = {
+      // Basic order information
+      status: 'pending',
+      total_amount: finalTotal,
+      user_id: user?.id || null,
       
-      // Prepare the order data with only essential fields that are definitely in the database schema
-      const orderData = {
-        // Basic order information
-        status: 'pending',
-        total_amount: finalTotal,
-        user_id: user?.id || null,
-        
-        // Store customer and shipping info as JSON
-        shipping_address: JSON.stringify({
-          customer_name: customerInfo.name,
-          customer_email: customerInfo.email,
-          customer_phone: customerInfo.phone,
-          address: customerInfo.address,
-          city: customerInfo.city,
-          state: customerInfo.state,
-          pincode: customerInfo.pincode,
-          payment_method: paymentMethod,
-          shipping_cost: shippingCost,
-          subtotal: subtotal,
-          discount: discountAmount,
-          courier: courierOptions.find(option => option.courier_code === selectedCourier)?.courier_name || 'Standard Shipping',
-          items: orderItems
-        })
-      };
+      // Store customer and shipping info as JSON
+      shipping_address: JSON.stringify({
+        customer_name: customerInfo.name,
+        customer_email: customerInfo.email,
+        customer_phone: customerInfo.phone,
+        address: customerInfo.address,
+        city: customerInfo.city,
+        state: customerInfo.state,
+        pincode: customerInfo.pincode,
+        payment_method: paymentMethod,
+        shipping_cost: shippingCost,
+        subtotal: subtotal,
+        discount: discountAmount,
+        courier: courierOptions.find(option => option.courier_code === selectedCourier)?.courier_name || 'Standard Shipping',
+        items: orderItems
+      })
+    };
+    
+    // Coupon data is already included in the shipping_address JSON
+    
+    console.log('Creating order with data:', { ...orderData, items: `${orderItems.length} items` });
+    
+    // Create the order in the database
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .insert(orderData)
+      .select()
+      .single();
+    
+    if (orderError) {
+      console.error('Order creation error:', orderError);
       
-      // Coupon data is already included in the shipping_address JSON
+      // Check if this is an RLS error
+      if (orderError.message.includes('policy') || orderError.message.includes('permission')) {
+        console.log('Detected RLS error, showing permission fix option');
+        setShowRLSError(true);
       
       console.log('Creating order with data:', { ...orderData, items: `${orderItems.length} items` });
       
@@ -850,29 +884,25 @@ const handleRazorpayPayment = async (orderId: string) => {
                   )}
                 </div>
                 
-                {/* Payment Method */}
-                <div>
-                  <h3 className="text-lg font-medium mb-4">Payment Method</h3>
-                  
-                  <RadioGroup 
-                    value={paymentMethod} 
+                {/* Payment method selection */}
+                <div className="space-y-4">
+                  <h3 className="font-medium">Payment Method</h3>
+                  <RadioGroup
+                    value={paymentMethod}
                     onValueChange={setPaymentMethod}
-                    className="space-y-3"
+                    className="space-y-2"
                   >
-                    <div className="flex items-center space-x-3 border rounded-md p-3">
+                    <div className="flex items-center space-x-2">
                       <RadioGroupItem value="cod" id="cod" />
-                      <label htmlFor="cod" className="flex-1 cursor-pointer">
-                        <div className="font-medium">Cash on Delivery</div>
-                        <div className="text-sm text-gray-500">Pay when your order arrives</div>
-                      </label>
+                      <Label htmlFor="cod">Cash on Delivery</Label>
                     </div>
-                    <div className="flex items-center space-x-3 border rounded-md p-3">
-                      <RadioGroupItem value="online" id="online" />
-                      <label htmlFor="online" className="flex-1 cursor-pointer flex items-center space-x-2">
-                        <div>
-                          <div className="font-medium">Online Payment</div>
-                          <div className="text-sm text-gray-500">Pay securely with Razorpay</div>
-                        </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="razorpay" id="razorpay" />
+                      <Label htmlFor="razorpay">Pay Online (Credit/Debit Card, Wallets)</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="upi_direct" id="upi_direct" />
+                      <Label htmlFor="upi_direct">Pay with UPI (PhonePe, Google Pay, Paytm)</Label>
                         <CreditCard className="h-5 w-5 text-brand-600 ml-auto" />
                       </label>
                     </div>
@@ -886,20 +916,47 @@ const handleRazorpayPayment = async (orderId: string) => {
                   >
                     Back to Information
                   </Button>
-                  <Button 
-                    onClick={handlePlaceOrder} 
-                    className="bg-brand-600 hover:bg-brand-700 flex-grow md:flex-grow-0"
-                    disabled={isProcessing || !selectedCourier || shippingCost === 0}
-                  >
-                    {isProcessing ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Processing...
-                      </>
-                    ) : (
-                      `Place Order${paymentMethod === 'online' ? ' & Pay Now' : ''}`
-                    )}
-                  </Button>
+                  {/* UPI Payment Component */}
+                  {showUpiPayment && currentOrderId && (
+                    <div className="mt-6 mb-4">
+                      <DirectUpiHandler
+                        orderId={currentOrderId}
+                        amount={finalTotal + shippingCost}
+                        customerName={customerInfo?.name || 'Customer'}
+                        onComplete={() => {
+                          setShowUpiPayment(false);
+                          clearCart();
+                          navigate(`/order-success/${currentOrderId}`);
+                        }}
+                      />
+                      <Button 
+                        variant="outline" 
+                        className="w-full mt-4" 
+                        onClick={() => setShowUpiPayment(false)}
+                      >
+                        Cancel and Choose Another Payment Method
+                      </Button>
+                    </div>
+                  )}
+                  
+                  {/* Place Order Button */}
+                  {!showUpiPayment && (
+                    <Button
+                      className="w-full mt-6"
+                      size="lg"
+                      onClick={handlePlaceOrder}
+                      disabled={isProcessing || !customerInfo || shippingCost <= 0}
+                    >
+                      {isProcessing ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        'Place Order'
+                      )}
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
