@@ -244,43 +244,109 @@ export const processPayment = async (
   onSuccess: (response: any) => void,
   onFailure: (error: any) => void
 ): Promise<void> => {
-  // Set up a global payment status check for mobile UPI apps
-  // This handles cases where the app returns to the browser without proper callback
-  const paymentStatusCheckId = `payment_check_${orderId}`;
-  window.localStorage.setItem(paymentStatusCheckId, 'pending');
+  // Create a global variable to track payment status
+  const paymentStatusKey = `payment_status_${orderId}`;
+  window.localStorage.setItem(paymentStatusKey, 'pending');
   
-  // Set up a listener for visibility changes (when user returns from UPI app)
-  const visibilityHandler = () => {
-    if (!document.hidden && window.localStorage.getItem(paymentStatusCheckId) === 'pending') {
-      console.log('User returned from UPI app, checking payment status...');
-      // Wait a moment for any normal callbacks to process
+  // Store the success and failure callbacks globally so they can be called from anywhere
+  window.__razorpayCallbacks = window.__razorpayCallbacks || {};
+  window.__razorpayCallbacks[orderId] = {
+    success: onSuccess,
+    failure: onFailure
+  };
+  
+  // Create a function to handle UPI app returns
+  window.handleUpiReturn = window.handleUpiReturn || function(orderId: string) {
+    console.log('UPI return handler called for order:', orderId);
+    const status = window.localStorage.getItem(`payment_status_${orderId}`);
+    
+    if (status === 'pending') {
+      // Show a processing overlay to prevent user interaction
+      const overlay = document.createElement('div');
+      overlay.id = 'payment-processing-overlay';
+      overlay.style.position = 'fixed';
+      overlay.style.top = '0';
+      overlay.style.left = '0';
+      overlay.style.width = '100%';
+      overlay.style.height = '100%';
+      overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+      overlay.style.zIndex = '9999';
+      overlay.style.display = 'flex';
+      overlay.style.flexDirection = 'column';
+      overlay.style.alignItems = 'center';
+      overlay.style.justifyContent = 'center';
+      overlay.style.color = 'white';
+      overlay.innerHTML = `
+        <div style="background-color: white; padding: 20px; border-radius: 8px; text-align: center; max-width: 80%;">
+          <h3 style="color: #333; margin-bottom: 15px;">Verifying Payment</h3>
+          <p style="color: #666; margin-bottom: 20px;">Please wait while we verify your payment...</p>
+          <div style="width: 50px; height: 50px; border: 5px solid #f3f3f3; border-top: 5px solid #167152; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+        </div>
+        <style>
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        </style>
+      `;
+      document.body.appendChild(overlay);
+      
+      // Check payment status with server
+      console.log('Checking payment status with server...');
       setTimeout(() => {
-        const currentStatus = window.localStorage.getItem(paymentStatusCheckId);
-        if (currentStatus === 'pending') {
-          console.log('Payment status still pending after return, checking with server...');
-          checkPaymentStatus(orderId, onSuccess, onFailure);
-        }
-      }, 3000);
+        checkPaymentStatus(orderId, 
+          // Success callback
+          (response) => {
+            console.log('Payment verification successful:', response);
+            window.localStorage.setItem(paymentStatusKey, 'success');
+            if (window.__razorpayCallbacks && window.__razorpayCallbacks[orderId]) {
+              window.__razorpayCallbacks[orderId].success(response);
+              delete window.__razorpayCallbacks[orderId];
+            }
+            // Remove overlay
+            document.body.removeChild(overlay);
+          },
+          // Failure callback
+          (error) => {
+            console.log('Payment verification failed:', error);
+            window.localStorage.setItem(paymentStatusKey, 'failed');
+            if (window.__razorpayCallbacks && window.__razorpayCallbacks[orderId]) {
+              window.__razorpayCallbacks[orderId].failure(error);
+              delete window.__razorpayCallbacks[orderId];
+            }
+            // Remove overlay
+            document.body.removeChild(overlay);
+          }
+        );
+      }, 2000);
+    }
+  };
+  
+  // Set up visibility change listener for UPI apps
+  const visibilityHandler = () => {
+    if (!document.hidden && window.localStorage.getItem(paymentStatusKey) === 'pending') {
+      console.log('User returned from UPI app, triggering payment check...');
+      window.handleUpiReturn(orderId);
     }
   };
   
   document.addEventListener('visibilitychange', visibilityHandler);
   
-  // Clean up function to remove event listeners
+  // Clean up function
   const cleanup = () => {
     document.removeEventListener('visibilitychange', visibilityHandler);
-    window.localStorage.removeItem(paymentStatusCheckId);
+    // Don't remove the localStorage item so we can check it later if needed
   };
   
-  // Override success and failure handlers to clean up
+  // Wrapped callbacks
   const wrappedSuccess = (response: any) => {
-    window.localStorage.setItem(paymentStatusCheckId, 'success');
+    window.localStorage.setItem(paymentStatusKey, 'success');
     cleanup();
     onSuccess(response);
   };
   
   const wrappedFailure = (error: any) => {
-    window.localStorage.setItem(paymentStatusCheckId, 'failed');
+    window.localStorage.setItem(paymentStatusKey, 'failed');
     cleanup();
     onFailure(error);
   };
