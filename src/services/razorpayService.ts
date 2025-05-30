@@ -72,6 +72,55 @@ export const loadRazorpayScript = (): Promise<boolean> => {
 };
 
 /**
+ * Check payment status with the server
+ * This is used when a user returns from a UPI app without proper callback
+ */
+export const checkPaymentStatus = async (
+  orderId: string,
+  onSuccess: (response: any) => void,
+  onFailure: (error: any) => void
+): Promise<void> => {
+  try {
+    console.log(`Checking payment status for order ${orderId}...`);
+    
+    // Call the Supabase Edge Function to check payment status
+    const { data, error } = await supabase.functions.invoke('checkRazorpayPaymentStatus', {
+      body: { orderId }
+    });
+    
+    if (error) {
+      console.error('Error checking payment status:', error);
+      onFailure(new Error(`Failed to check payment status: ${error.message}`));
+      return;
+    }
+    
+    console.log('Payment status check response:', data);
+    
+    if (data?.status === 'paid' || data?.status === 'success') {
+      // Payment was successful
+      console.log('Payment was successful according to server check');
+      onSuccess({
+        razorpay_payment_id: data.paymentId || 'server_verified',
+        razorpay_order_id: data.orderId || orderId,
+        razorpay_signature: data.signature || 'server_verified',
+        verified_by_server: true
+      });
+    } else if (data?.status === 'pending') {
+      // Payment is still processing
+      console.log('Payment is still processing, showing retry options');
+      onFailure(new Error('Payment is still processing. Please check your UPI app or try again.'));
+    } else {
+      // Payment failed or unknown status
+      console.log('Payment failed or unknown status:', data?.status);
+      onFailure(new Error('Payment verification failed. Please try again.'));
+    }
+  } catch (error) {
+    console.error('Error in payment status check:', error);
+    onFailure(error);
+  }
+};
+
+/**
  * Create a Razorpay order using the Supabase Edge Function
  */
 export const createOrder = async (
@@ -195,6 +244,47 @@ export const processPayment = async (
   onSuccess: (response: any) => void,
   onFailure: (error: any) => void
 ): Promise<void> => {
+  // Set up a global payment status check for mobile UPI apps
+  // This handles cases where the app returns to the browser without proper callback
+  const paymentStatusCheckId = `payment_check_${orderId}`;
+  window.localStorage.setItem(paymentStatusCheckId, 'pending');
+  
+  // Set up a listener for visibility changes (when user returns from UPI app)
+  const visibilityHandler = () => {
+    if (!document.hidden && window.localStorage.getItem(paymentStatusCheckId) === 'pending') {
+      console.log('User returned from UPI app, checking payment status...');
+      // Wait a moment for any normal callbacks to process
+      setTimeout(() => {
+        const currentStatus = window.localStorage.getItem(paymentStatusCheckId);
+        if (currentStatus === 'pending') {
+          console.log('Payment status still pending after return, checking with server...');
+          checkPaymentStatus(orderId, onSuccess, onFailure);
+        }
+      }, 3000);
+    }
+  };
+  
+  document.addEventListener('visibilitychange', visibilityHandler);
+  
+  // Clean up function to remove event listeners
+  const cleanup = () => {
+    document.removeEventListener('visibilitychange', visibilityHandler);
+    window.localStorage.removeItem(paymentStatusCheckId);
+  };
+  
+  // Override success and failure handlers to clean up
+  const wrappedSuccess = (response: any) => {
+    window.localStorage.setItem(paymentStatusCheckId, 'success');
+    cleanup();
+    onSuccess(response);
+  };
+  
+  const wrappedFailure = (error: any) => {
+    window.localStorage.setItem(paymentStatusCheckId, 'failed');
+    cleanup();
+    onFailure(error);
+  };
+  
   try {
     console.log('Starting direct payment process for order:', orderId);
     console.log('Customer info:', { ...customerInfo, phone: customerInfo.phone.substring(0, 3) + '****' });
@@ -261,13 +351,26 @@ export const processPayment = async (
       setTimeout(() => {
         console.log('Opening direct payment window...');
         try {
-          // Step 4: Open the payment window directly
-          openRazorpayCheckout(options, onSuccess, onFailure);
+          // Step 4: Open the payment window directly with wrapped handlers
+          openRazorpayCheckout(options, wrappedSuccess, wrappedFailure);
           console.log('Razorpay checkout opened successfully');
+          
+          // Set a backup timer for mobile UPI apps that might not trigger callbacks
+          const backupTimer = setTimeout(() => {
+            const currentStatus = window.localStorage.getItem(paymentStatusCheckId);
+            if (currentStatus === 'pending') {
+              console.log('Payment status still pending after timeout, checking with server...');
+              checkPaymentStatus(orderId, wrappedSuccess, wrappedFailure);
+            }
+          }, 60000); // 1 minute backup timer
+          
+          // Store the backup timer ID so it can be cleared if needed
+          window.localStorage.setItem(`${paymentStatusCheckId}_timer`, backupTimer.toString());
+          
           resolve();
         } catch (err) {
           console.error('Error during Razorpay checkout opening:', err);
-          onFailure(err);
+          wrappedFailure(err);
           resolve(); // Resolve anyway to continue execution
         }
       }, 2000); // Increased delay to 2 seconds for better reliability
