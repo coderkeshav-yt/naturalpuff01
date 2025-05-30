@@ -40,6 +40,7 @@ import { Badge } from "@/components/ui/badge";
 import { useProductStatus } from '@/hooks/use-product-status';
 import { RefreshDataButton } from '@/components/admin/RefreshDataButton';
 import { ProductImageCarousel } from '@/components/ui/product-image-carousel';
+import LazyImage from '@/components/ui/LazyImage';
 
 interface Product {
   id: number;
@@ -848,13 +849,12 @@ const Products = () => {
                             const currentImage = imageUrls[currentImageIndex] || selectedProduct.image_url;
                             
                             return (
-                              <img 
+                              <LazyImage 
                                 src={currentImage} 
                                 alt={`${selectedProduct.name} - image ${currentImageIndex + 1}`}
-                                className="w-full h-full object-cover"
-                                onError={(e) => {
-                                  e.currentTarget.src = 'https://via.placeholder.com/800x600?text=Image+Not+Found';
-                                }}
+                                className="w-full h-full"
+                                placeholderSrc="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9IiNlOWVjZWYiLz48L3N2Zz4="
+                                onLoad={() => console.log(`Loaded product detail image: ${currentImage}`)}
                               />
                             );
                           })()}

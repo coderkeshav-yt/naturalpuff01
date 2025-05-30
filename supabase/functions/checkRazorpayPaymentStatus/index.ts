@@ -1,4 +1,6 @@
+// @ts-ignore: Deno-specific imports
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
+// @ts-ignore: Deno-specific imports
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1'
 
 const corsHeaders = {
@@ -71,12 +73,16 @@ serve(async (req) => {
     }
     
     // Create Supabase client
+    // @ts-ignore: Deno-specific API
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
+    // @ts-ignore: Deno-specific API
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
     const supabase = createClient(supabaseUrl, supabaseKey)
     
     // Get Razorpay credentials from environment variables
+    // @ts-ignore: Deno-specific API
     const razorpayKeyId = Deno.env.get('RAZORPAY_KEY_ID')
+    // @ts-ignore: Deno-specific API
     const razorpayKeySecret = Deno.env.get('RAZORPAY_KEY_SECRET')
     
     if (!razorpayKeyId || !razorpayKeySecret) {

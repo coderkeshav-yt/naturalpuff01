@@ -8,6 +8,7 @@ import { motion } from 'framer-motion';
 import { Star, ChevronRight, CheckCircle, Calendar, Gift } from 'lucide-react';
 import { ImageCarousel } from '@/components/ui/image-carousel';
 import { HeroCarousel } from '@/components/ui/hero-carousel';
+import LazyImage from '@/components/ui/LazyImage';
 
 // Product interface
 interface Product {
@@ -415,10 +416,10 @@ const Home = () => {
                   className="bg-white rounded-xl overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 group"
                 >
                   <div className="aspect-square overflow-hidden relative">
-                    <img 
+                    <LazyImage 
                       src={product.image_url || '/placeholder.svg'}
                       alt={product.name}
-                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                      className="w-full h-full transition-transform duration-700 group-hover:scale-105"
                     />
                     {product.discount_percent && (
                       <div className="absolute top-4 left-4 bg-brand-600 text-white rounded-full px-3 py-1.5 text-sm font-bold">
@@ -516,10 +517,10 @@ const Home = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2">
                   <div className="h-full">
                     <div className="h-full overflow-hidden">
-                      <img 
+                      <LazyImage 
                         src={item.image}
                         alt={item.title}
-                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                        className="w-full h-full transition-transform duration-700 group-hover:scale-105"
                       />
                     </div>
                   </div>

@@ -1,60 +1,150 @@
 
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import './App.css';
-import Home from './pages/Home';
-import About from './pages/About';
-import Blog from './pages/Blog';
-import BlogPost from './pages/BlogPost';
-import Products from './pages/Products';
 import Layout from './components/layout/Layout';
-import Contact from './pages/Contact';
-import NotFound from './pages/NotFound';
-import Signup from './pages/Signup';
-import Login from './pages/Login';
-import ResetPassword from './pages/ResetPassword';
-import ResetPasswordError from './pages/ResetPasswordError';
-import Profile from './pages/Profile';
-import Checkout from './pages/Checkout';
-import Payment from './pages/Payment';
-import ProcessPayment from './pages/ProcessPayment';
-import HealthBenefits from './pages/HealthBenefits';
-import AdminDashboard from './pages/AdminDashboard';
-import ShiprocketAdmin from './pages/admin/ShiprocketAdmin';
-import EventsOffers from './pages/EventsOffers';
 import AdminRoute from './components/auth/AdminRoute';
-import OrderSuccess from './pages/OrderSuccess';
-import FixPermissions from './pages/FixPermissions';
 import { Toaster } from "@/components/ui/toaster";
+
+// Eagerly loaded components (critical for initial render)
+import Home from './pages/Home';
+
+// Lazy loaded components
+const About = lazy(() => import('./pages/About'));
+const Blog = lazy(() => import('./pages/Blog'));
+const BlogPost = lazy(() => import('./pages/BlogPost'));
+const Products = lazy(() => import('./pages/Products'));
+const Contact = lazy(() => import('./pages/Contact'));
+const NotFound = lazy(() => import('./pages/NotFound'));
+const Signup = lazy(() => import('./pages/Signup'));
+const Login = lazy(() => import('./pages/Login'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
+const ResetPasswordError = lazy(() => import('./pages/ResetPasswordError'));
+const Profile = lazy(() => import('./pages/Profile'));
+const Checkout = lazy(() => import('./pages/Checkout'));
+const Payment = lazy(() => import('./pages/Payment'));
+const ProcessPayment = lazy(() => import('./pages/ProcessPayment'));
+const HealthBenefits = lazy(() => import('./pages/HealthBenefits'));
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
+const ShiprocketAdmin = lazy(() => import('./pages/admin/ShiprocketAdmin'));
+const EventsOffers = lazy(() => import('./pages/EventsOffers'));
+const OrderSuccess = lazy(() => import('./pages/OrderSuccess'));
+const FixPermissions = lazy(() => import('./pages/FixPermissions'));
+const PaymentVerificationPage = lazy(() => import('./pages/PaymentVerificationPage'));
+
+// Loading component to show while lazy components are loading
+const LoadingFallback = () => (
+  <div className="flex items-center justify-center min-h-screen">
+    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500"></div>
+  </div>
+);
 
 function App() {
   return (
     <>
       <Routes>
         <Route path="/" element={<Layout />}>
+          {/* Home is eagerly loaded for better initial load experience */}
           <Route index element={<Home />} />
-          <Route path="about" element={<About />} />
-          <Route path="blog" element={<Blog />} />
-          <Route path="blog/:id" element={<BlogPost />} />
-          <Route path="products" element={<Products />} />
-          <Route path="contact" element={<Contact />} />
-          <Route path="signup" element={<Signup />} />
-          <Route path="login" element={<Login />} />
-          <Route path="reset-password" element={<ResetPassword />} />
-          <Route path="reset-password-error" element={<ResetPasswordError />} />
-          <Route path="profile" element={<Profile />} />
-          <Route path="checkout" element={<Checkout />} />
-          <Route path="payment" element={<Payment />} />
-          <Route path="process-payment" element={<ProcessPayment />} />
-          <Route path="health-benefits" element={<HealthBenefits />} />
-          <Route path="events-offers" element={<EventsOffers />} />
-          <Route path="order-success" element={<OrderSuccess />} />
-          <Route path="fix-permissions" element={<FixPermissions />} />
+          
+          {/* All other routes are lazy loaded */}
+          <Route path="about" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <About />
+            </Suspense>
+          } />
+          <Route path="blog" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Blog />
+            </Suspense>
+          } />
+          <Route path="blog/:id" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <BlogPost />
+            </Suspense>
+          } />
+          <Route path="products" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Products />
+            </Suspense>
+          } />
+          <Route path="contact" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Contact />
+            </Suspense>
+          } />
+          <Route path="signup" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Signup />
+            </Suspense>
+          } />
+          <Route path="login" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Login />
+            </Suspense>
+          } />
+          <Route path="reset-password" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <ResetPassword />
+            </Suspense>
+          } />
+          <Route path="reset-password-error" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <ResetPasswordError />
+            </Suspense>
+          } />
+          <Route path="profile" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Profile />
+            </Suspense>
+          } />
+          <Route path="checkout" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Checkout />
+            </Suspense>
+          } />
+          <Route path="payment" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Payment />
+            </Suspense>
+          } />
+          <Route path="process-payment" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <ProcessPayment />
+            </Suspense>
+          } />
+          <Route path="payment-verification" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <PaymentVerificationPage />
+            </Suspense>
+          } />
+          <Route path="health-benefits" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <HealthBenefits />
+            </Suspense>
+          } />
+          <Route path="events-offers" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <EventsOffers />
+            </Suspense>
+          } />
+          <Route path="order-success" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <OrderSuccess />
+            </Suspense>
+          } />
+          <Route path="fix-permissions" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <FixPermissions />
+            </Suspense>
+          } />
           <Route 
             path="dashboard/admin" 
             element={
               <AdminRoute>
-                <AdminDashboard />
+                <Suspense fallback={<LoadingFallback />}>
+                  <AdminDashboard />
+                </Suspense>
               </AdminRoute>
             } 
           />
@@ -62,11 +152,17 @@ function App() {
             path="dashboard/shiprocket" 
             element={
               <AdminRoute>
-                <ShiprocketAdmin />
+                <Suspense fallback={<LoadingFallback />}>
+                  <ShiprocketAdmin />
+                </Suspense>
               </AdminRoute>
             } 
           />
-          <Route path="*" element={<NotFound />} />
+          <Route path="*" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <NotFound />
+            </Suspense>
+          } />
         </Route>
       </Routes>
       <Toaster />

@@ -177,29 +177,77 @@ export const openRazorpayCheckout = (
   onFailure: (error: any) => void
 ): void => {
   try {
-    // Ensure Razorpay is loaded
-    if (!window.Razorpay) {
-      throw new Error('Razorpay is not loaded. Please call loadRazorpayScript first.');
+    console.log('Opening Razorpay checkout with options:', {
+      ...options,
+      key: '***HIDDEN***', // Hide key in logs
+      prefill: options.prefill ? { ...options.prefill, contact: '****' } : undefined // Hide contact in logs
+    });
+    
+    // Create a unique key for this payment attempt
+    const paymentKey = `payment_${Date.now()}`;
+    
+    // Store order ID in localStorage for verification after app redirect
+    if (options.notes?.order_id) {
+      localStorage.setItem('current_order_id', options.notes.order_id);
+      
+      // Store payment data for verification
+      localStorage.setItem('np_current_payment', JSON.stringify({
+        orderId: options.notes.order_id,
+        amount: options.amount / 100, // Convert back from paise
+        status: 'pending',
+        timestamp: Date.now(),
+        customerInfo: options.prefill
+      }));
     }
     
-    // Store payment initiation status to prevent duplicate callbacks
-    const paymentKey = `payment_${Date.now()}`;
-    window.localStorage.setItem(paymentKey, 'initiated');
+    // Store initial payment status in localStorage
+    window.localStorage.setItem(paymentKey, 'pending');
     
-    // Wrap callbacks to ensure they're only called once
+    // Create wrapped callbacks that handle mobile browser issues
     const safeSuccess = (response: any) => {
+      console.log('Payment success callback triggered:', response);
+      
+      // Get current payment status from localStorage
       const status = window.localStorage.getItem(paymentKey);
+      
+      // Only proceed if payment is still pending
       if (status !== 'completed') {
         window.localStorage.setItem(paymentKey, 'completed');
-        console.log('Payment successful:', response);
+        
+        // Store response for verification
+        if (options.notes?.order_id) {
+          const paymentData = JSON.parse(localStorage.getItem('np_current_payment') || '{}');
+          localStorage.setItem('np_current_payment', JSON.stringify({
+            ...paymentData,
+            status: 'success',
+            response: response
+          }));
+        }
+        
         onSuccess(response);
       }
     };
     
     const safeFailure = (error: any) => {
+      console.error('Payment failure callback triggered:', error);
+      
+      // Get current payment status from localStorage
       const status = window.localStorage.getItem(paymentKey);
+      
+      // Only proceed if payment is not already completed or failed
       if (status !== 'failed' && status !== 'completed') {
         window.localStorage.setItem(paymentKey, 'failed');
+        
+        // Store error for verification
+        if (options.notes?.order_id) {
+          const paymentData = JSON.parse(localStorage.getItem('np_current_payment') || '{}');
+          localStorage.setItem('np_current_payment', JSON.stringify({
+            ...paymentData,
+            status: 'failed',
+            error: error?.message || 'Unknown error'
+          }));
+        }
+        
         console.error('Payment failed:', error);
         onFailure(error);
       }
@@ -214,7 +262,18 @@ export const openRazorpayCheckout = (
       modal: {
         ondismiss: function() {
           console.log('Payment window closed by user');
-          safeFailure(new Error('Payment cancelled by user'));
+          // Don't immediately fail on dismiss - could be returning from UPI app
+          // Instead, we'll check the status when user returns
+          
+          // For non-mobile or non-UPI, we can consider it cancelled
+          if (!/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+            safeFailure(new Error('Payment cancelled by user'));
+          } else {
+            // For mobile, we'll redirect to verification page
+            // This helps with UPI app returns
+            console.log('Mobile detected, redirecting to verification page');
+            window.location.href = `/payment-verification?order_id=${options.notes?.order_id || ''}`;
+          }
         },
         escape: false,  // Prevent escape key from closing modal
         confirm_close: true, // Ask for confirmation when closing
