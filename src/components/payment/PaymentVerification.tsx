@@ -22,6 +22,9 @@ const PaymentVerification: React.FC<PaymentVerificationProps> = ({ onComplete })
     // Scroll to top when component mounts
     window.scrollTo({ top: 0, behavior: 'smooth' });
     
+    // Clear payment_in_progress flag to prevent getting stuck
+    localStorage.removeItem('payment_in_progress');
+    
     const verifyPayment = async () => {
       try {
         setIsVerifying(true);
@@ -34,15 +37,25 @@ const PaymentVerification: React.FC<PaymentVerificationProps> = ({ onComplete })
         // Check for UPI return parameters
         const paymentId = searchParams.get('payment_id') || razorpayPaymentId;
         const orderIdParam = searchParams.get('order_id');
+        const statusParam = searchParams.get('Status') || searchParams.get('status'); // Some UPI apps return Status
         
-        // Check if we have a stored payment in localStorage
-        const storedPaymentData = localStorage.getItem('np_current_payment');
+        // Check if we have a stored payment in localStorage or sessionStorage
+        let storedPaymentData = localStorage.getItem('np_current_payment');
+        
+        // If not in localStorage, try sessionStorage as backup
+        if (!storedPaymentData) {
+          storedPaymentData = sessionStorage.getItem('np_current_payment');
+          console.log('Using payment data from sessionStorage');
+        }
+        
         let storedOrderId = null;
+        let paymentTimestamp = null;
         
         if (storedPaymentData) {
           try {
             const paymentData = JSON.parse(storedPaymentData);
             storedOrderId = paymentData.orderId;
+            paymentTimestamp = paymentData.timestamp;
             console.log('Found stored payment data:', paymentData);
           } catch (e) {
             console.error('Error parsing stored payment data:', e);
@@ -62,6 +75,19 @@ const PaymentVerification: React.FC<PaymentVerificationProps> = ({ onComplete })
             variant: "destructive"
           });
           return;
+        }
+        
+        // Check if the UPI app returned a status parameter
+        if (statusParam) {
+          console.log('UPI app returned status:', statusParam);
+          // Some UPI apps return SUCCESS or FAILURE directly
+          if (statusParam.toUpperCase() === 'SUCCESS') {
+            console.log('UPI app reported successful payment');
+            // We'll still verify with server, but this is a good sign
+          } else if (statusParam.toUpperCase() === 'FAILURE' || statusParam.toUpperCase() === 'FAILED') {
+            console.log('UPI app reported failed payment');
+            // We'll still verify with server to be sure
+          }
         }
         
         setOrderId(paymentOrderId);
@@ -105,40 +131,68 @@ const PaymentVerification: React.FC<PaymentVerificationProps> = ({ onComplete })
         // We need to check with the server
         console.log('No Razorpay parameters found, checking payment status with server...');
         
-        // Check payment status with server
-        checkPaymentStatus(
-          paymentOrderId,
-          (response) => {
-            // Success callback
-            console.log('Payment verification successful:', response);
-            setVerificationResult('success');
-            
-            // Clear payment data
-            localStorage.removeItem('np_current_payment');
-            localStorage.removeItem('current_order_id');
-            
-            toast({
-              title: "Payment Successful",
-              description: "Your payment was successful and your order is being processed.",
-            });
-            
-            // Redirect to order success page
-            setTimeout(() => {
-              navigate(`/order-success?id=${paymentOrderId}`);
-            }, 2000);
-          },
-          (error) => {
-            // Failure callback
-            console.error('Payment verification failed:', error);
-            setVerificationResult('failed');
-            
-            toast({
-              title: "Payment Verification Failed",
-              description: "We couldn't verify your payment. Please check your payment app or contact support.",
-              variant: "destructive"
-            });
-          }
-        );
+        // Implement multiple verification attempts for UPI payments
+        // This is crucial for mobile UPI payments as they may take time to reflect
+        let verificationAttempts = 0;
+        const maxVerificationAttempts = 3;
+        const verificationInterval = 5000; // 5 seconds between attempts
+        
+        const attemptVerification = () => {
+          verificationAttempts++;
+          console.log(`Payment verification attempt ${verificationAttempts} of ${maxVerificationAttempts}`);
+          
+          // Check payment status with server
+          checkPaymentStatus(
+            paymentOrderId,
+            (response) => {
+              // Success callback
+              console.log('Payment verification successful:', response);
+              setVerificationResult('success');
+              
+              // Clear payment data from both storage types
+              localStorage.removeItem('np_current_payment');
+              localStorage.removeItem('current_order_id');
+              sessionStorage.removeItem('np_current_payment');
+              localStorage.removeItem('payment_in_progress');
+              
+              toast({
+                title: "Payment Successful",
+                description: "Your payment was successful and your order is being processed.",
+              });
+              
+              // Redirect to order success page
+              setTimeout(() => {
+                navigate(`/order-success?id=${paymentOrderId}`);
+              }, 2000);
+            },
+            (error) => {
+              // Failure callback
+              console.error(`Payment verification attempt ${verificationAttempts} failed:`, error);
+              
+              // If we haven't reached max attempts, try again
+              if (verificationAttempts < maxVerificationAttempts) {
+                console.log(`Will retry verification in ${verificationInterval/1000} seconds...`);
+                setTimeout(attemptVerification, verificationInterval);
+              } else {
+                // All attempts failed
+                console.log('All verification attempts failed');
+                setVerificationResult('failed');
+                
+                // Clear payment data
+                localStorage.removeItem('payment_in_progress');
+                
+                toast({
+                  title: "Payment Verification Failed",
+                  description: "We couldn't verify your payment after multiple attempts. Please check your payment app or contact support.",
+                  variant: "destructive"
+                });
+              }
+            }
+          );
+        };
+        
+        // Start the verification process
+        attemptVerification();
       } catch (error) {
         console.error('Error during payment verification:', error);
         setVerificationResult('failed');
