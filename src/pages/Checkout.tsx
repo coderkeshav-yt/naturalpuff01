@@ -16,6 +16,7 @@ import { CustomerInfo, Coupon } from '@/types/product';
 import CheckoutForm from '@/components/checkout/CheckoutForm';
 import ShiprocketServiceabilityChecker from '@/components/checkout/ShiprocketServiceability';
 import { processPayment, loadRazorpayScript } from '@/services/razorpayService';
+import ProcessingOverlay from '@/components/payment/ProcessingOverlay';
 import DirectUpiHandler from '@/components/DirectUpiHandler';
 import { loadScript } from '@/lib/utils';
 import OrderPolicyError from '@/components/layout/OrderPolicyError';
@@ -213,6 +214,10 @@ const Checkout = () => {
       
       // Set current order ID for UPI handler
       setCurrentOrderId(orderId);
+      
+      // Store order ID in localStorage for verification after app redirect
+      localStorage.setItem('current_order_id', orderId);
+      
       setShowUpiPayment(true);
       setIsProcessing(false);
       
@@ -622,18 +627,153 @@ const Checkout = () => {
                 <CardTitle>Payment</CardTitle>
               </CardHeader>
               <CardContent>
-                {pincode && (
-                  <div className="mb-6 border rounded-lg p-4 bg-gray-50">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-md font-medium">Shipping Options</h3>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-muted-foreground">Delivering to:</span>
-                        <span className="font-medium text-sm bg-white px-2 py-1 rounded border">{pincode}</span>
+                {isProcessing ? (
+                  <ProcessingOverlay 
+                    orderId={currentOrderId} 
+                    onCancel={() => {
+                      setIsProcessing(false);
+                      // Clear payment flags
+                      localStorage.removeItem('payment_in_progress');
+                      sessionStorage.removeItem('np_current_payment');
+                      localStorage.removeItem('np_current_payment');
+                    }} 
+                  />
+                ) : (
+                  <div>
+                    {pincode && (
+                      <div className="mb-6 border rounded-lg p-4 bg-gray-50">
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="text-md font-medium">Shipping Options</h3>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-muted-foreground">Delivering to:</span>
+                            <span className="font-medium text-sm bg-white px-2 py-1 rounded border">{pincode}</span>
+                          </div>
+                        </div>
+                        
+                        <div className="space-y-4">
+                          <div className="flex items-center space-x-2">
+                            <div className="flex-grow">
+                              <Input
+                                type="text"
+                                placeholder="Enter delivery pincode"
+                                value={pincode}
+                                onChange={(e) => {
+                                  // Only allow numbers and limit to 6 digits
+                                  const value = e.target.value.replace(/[^0-9]/g, '').substring(0, 6);
+                                  setPincode(value);
+                                  
+                                  // Reset selection if pincode changes
+                                  if (value.length !== 6) {
+                                    setSelectedCourier('');
+                                    setShippingCost(0);
+                                    setCourierOptions([]);
+                                  }
+                                }}
+                                className="w-full"
+                                maxLength={6}
+                              />
+                            </div>
+                            <Button 
+                              onClick={() => {
+                                if (!pincode || pincode.length !== 6) {
+                                  toast({
+                                    title: "Invalid Pincode",
+                                    description: "Please enter a valid 6-digit pincode.",
+                                    variant: "destructive"
+                                  });
+                                  return;
+                                }
+                                
+                                // Directly use hardcoded shipping options
+                                const mockCourierOptions = [
+                                  {
+                                    courier_name: "DTDC",
+                                    courier_code: "1",
+                                    rate: 120,
+                                    etd: "2-3 days",
+                                    serviceability_type: "surface"
+                                  },
+                                  {
+                                    courier_name: "Delhivery",
+                                    courier_code: "2",
+                                    rate: 150,
+                                    etd: "1-2 days",
+                                    serviceability_type: "air"
+                                  }
+                                ];
+                                
+                                setCourierOptions(mockCourierOptions);
+                                // Auto-select the first courier option
+                                setSelectedCourier(mockCourierOptions[0].courier_code);
+                                setShippingCost(mockCourierOptions[0].rate);
+                                
+                                toast({
+                                  title: "Delivery Available",
+                                  description: "We can deliver to your location.",
+                                  variant: "default"
+                                });
+                              }}
+                              className="whitespace-nowrap"
+                            >
+                              <MapPin className="mr-2 h-4 w-4" />
+                              Check Availability
+                            </Button>
+                          </div>
+                          
+                          {selectedCourier && (
+                            <div className="space-y-2">
+                              <p className="font-medium">Available Shipping Options:</p>
+                              <RadioGroup value={selectedCourier} onValueChange={(value) => {
+                                setSelectedCourier(value);
+                                const option = courierOptions.find(opt => opt.courier_code === value);
+                                if (option) {
+                                  setShippingCost(option.rate);
+                                }
+                              }}>
+                                {courierOptions.map((option) => (
+                                  <div key={option.courier_code} className="flex items-center space-x-2 p-2 border rounded-md">
+                                    <RadioGroupItem value={option.courier_code} id={`courier-${option.courier_code}`} />
+                                    <Label htmlFor={`courier-${option.courier_code}`} className="flex-grow cursor-pointer">
+                                      <div className="flex justify-between items-center w-full">
+                                        <div>
+                                          <p className="font-medium">{option.courier_name}</p>
+                                          <p className="text-sm text-gray-500">{option.etd}</p>
+                                        </div>
+                                        <p className="font-medium">₹{option.rate.toFixed(2)}</p>
+                                      </div>
+                                    </Label>
+                                  </div>
+                                ))}
+                              </RadioGroup>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    )}
                     
                     <div className="space-y-4">
-                      <div className="flex items-center space-x-2">
+                      <h3 className="font-medium text-lg">Payment Method</h3>
+                      <RadioGroup
+                        value={paymentMethod}
+                        onValueChange={setPaymentMethod}
+                        className="space-y-3"
+                      >
+                        <div className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50 transition-colors">
+                          <RadioGroupItem value="cod" id="cod" />
+                          <Label htmlFor="cod" className="flex items-center gap-2 cursor-pointer">
+                            <div className="bg-amber-100 p-2 rounded-full">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-600">
+                                <rect width="20" height="16" x="2" y="4" rx="2" />
+                                <circle cx="12" cy="12" r="4" />
+                                <path d="M12 8v8" />
+                                <path d="M8 12h8" />
+                              </svg>
+                            </div>
+                            <div>
+                              <span className="font-medium">Cash on Delivery</span>
+                              <p className="text-xs text-muted-foreground">Pay when your order arrives</p>
+                            </div>
+                          </Label>
                         <div className="flex-grow">
                           <Input
                             type="text"

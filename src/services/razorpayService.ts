@@ -350,6 +350,19 @@ export const directUpiPayment = async (
     localStorage.setItem('payment_txn_ref', txnRef);
     localStorage.setItem('payment_start_time', Date.now().toString());
     
+    // Set a safety timeout that will redirect to verification page if user gets stuck
+    // This is crucial for mobile UPI payments that don't properly redirect back
+    const safetyTimeout = setTimeout(() => {
+      // If we're still on the same page after 30 seconds, redirect to verification
+      if (document.visibilityState === 'visible') {
+        console.log('Safety timeout triggered - redirecting to verification page');
+        window.location.href = `${window.location.origin}/payment-verification?order_id=${orderId}`;
+      }
+    }, 30000); // 30 seconds timeout
+    
+    // Store the timeout ID so it can be cleared if needed
+    localStorage.setItem('upi_safety_timeout', safetyTimeout.toString());
+    
     // Open the UPI URL
     window.location.href = upiUrl;
     

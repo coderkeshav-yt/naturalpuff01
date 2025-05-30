@@ -25,6 +25,13 @@ const PaymentVerification: React.FC<PaymentVerificationProps> = ({ onComplete })
     // Clear payment_in_progress flag to prevent getting stuck
     localStorage.removeItem('payment_in_progress');
     
+    // Clear any safety timeouts to prevent duplicate redirects
+    const timeoutId = localStorage.getItem('upi_safety_timeout');
+    if (timeoutId) {
+      clearTimeout(parseInt(timeoutId));
+      localStorage.removeItem('upi_safety_timeout');
+    }
+    
     const verifyPayment = async () => {
       try {
         setIsVerifying(true);
