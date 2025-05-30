@@ -45,6 +45,59 @@ const Checkout = () => {
   // Calculate cart totals
   const subtotal = totalPrice;
 
+  // Function to refresh product prices from the database
+  const refreshProductPrices = async () => {
+    if (items.length === 0) return;
+    
+    try {
+      // Get all product IDs from cart
+      const productIds = items.map(item => item.id);
+      
+      // Fetch latest prices from database
+      const { data: products, error } = await supabase
+        .from('products')
+        .select('id, price')
+        .in('id', productIds);
+      
+      if (error) {
+        console.error('Error fetching updated product prices:', error);
+        return;
+      }
+      
+      if (!products || products.length === 0) return;
+      
+      // Create a map of product ID to latest price
+      const priceMap = products.reduce((map, product) => {
+        map[product.id] = product.price;
+        return map;
+      }, {} as Record<number, number>);
+      
+      // Check if any prices have changed
+      const hasChanges = items.some(item => {
+        const latestPrice = priceMap[item.id];
+        return latestPrice !== undefined && latestPrice !== item.price;
+      });
+      
+      if (hasChanges) {
+        // Update cart items with latest prices
+        items.forEach(item => {
+          const latestPrice = priceMap[item.id];
+          if (latestPrice !== undefined && latestPrice !== item.price) {
+            console.log(`Updating price for ${item.name} from ${item.price} to ${latestPrice}`);
+            updateQuantity(item.id, item.quantity, latestPrice);
+          }
+        });
+        
+        toast({
+          title: "Prices Updated",
+          description: "Some product prices have been updated to reflect the latest changes.",
+        });
+      }
+    } catch (error) {
+      console.error('Error refreshing product prices:', error);
+    }
+  };
+
   // Check if cart is empty and redirect if needed
   useEffect(() => {
     // Save checkout state to session storage
@@ -82,6 +135,11 @@ const Checkout = () => {
     };
 
     loadRazorpay();
+  }, []);
+  
+  // Refresh product prices when the checkout page loads
+  useEffect(() => {
+    refreshProductPrices();
   }, []);
 
   // Handle quantity change

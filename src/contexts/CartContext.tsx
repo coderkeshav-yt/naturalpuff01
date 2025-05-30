@@ -104,14 +104,22 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     setItems(currentItems => currentItems.filter(item => item.id !== id));
   };
 
-  const updateQuantity = (id: number, quantity: number) => {
+  const updateQuantity = (id: number, quantity: number, newPrice?: number) => {
     if (quantity <= 0) {
       removeItem(id);
     } else {
       setItems(currentItems => 
-        currentItems.map(item => 
-          item.id === id ? { ...item, quantity } : item
-        )
+        currentItems.map(item => {
+          if (item.id === id) {
+            // If a new price is provided, update both quantity and price
+            if (newPrice !== undefined) {
+              return { ...item, quantity, price: newPrice };
+            }
+            // Otherwise just update quantity
+            return { ...item, quantity };
+          }
+          return item;
+        })
       );
     }
   };
