@@ -60,7 +60,12 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     const savedCoupon = localStorage.getItem('appliedCoupon');
     if (savedCoupon) {
       try {
-        setAppliedCoupon(JSON.parse(savedCoupon));
+        const parsedCoupon = JSON.parse(savedCoupon);
+        // Ensure min_order_value is properly loaded
+        if (parsedCoupon.min_order_value === undefined) {
+          parsedCoupon.min_order_value = null;
+        }
+        setAppliedCoupon(parsedCoupon);
       } catch (error) {
         console.error('Failed to parse coupon data:', error);
         localStorage.removeItem('appliedCoupon');
@@ -130,7 +135,12 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   
   // Coupon methods
   const applyCoupon = (coupon: Coupon) => {
-    setAppliedCoupon(coupon);
+    // Ensure min_order_value is properly set
+    const validatedCoupon = {
+      ...coupon,
+      min_order_value: coupon.min_order_value ?? null
+    };
+    setAppliedCoupon(validatedCoupon);
   };
   
   const removeCoupon = () => {
@@ -145,7 +155,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   );
   
   // Calculate discount amount based on applied coupon
-  const discountAmount = appliedCoupon && totalPrice >= (appliedCoupon.min_order_value || 0)
+  const discountAmount = appliedCoupon && totalPrice >= (appliedCoupon.min_order_value ?? 0)
     ? Math.round((totalPrice * appliedCoupon.discount_percent) / 100)
     : 0;
   

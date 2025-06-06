@@ -77,8 +77,45 @@ const OrderShippingDetails = ({
           <div className="space-y-4">
             <div>
               <p className="font-medium">{customerName}</p>
-              <p className="text-gray-600">{shippingAddress}</p>
-              <p className="text-gray-600">{shippingCity}, {shippingState} - {shippingPincode}</p>
+              {/* Parse JSON if the shipping address is in JSON format */}
+              {(() => {
+                try {
+                  // Check if the string is JSON
+                  if (shippingAddress && (shippingAddress.startsWith('{') || shippingAddress.includes('customer_name'))) {
+                    const parsedAddress = JSON.parse(shippingAddress);
+                    return (
+                      <>
+                        <p className="text-gray-600">{parsedAddress.address || ''}</p>
+                        <p className="text-gray-600">
+                          {parsedAddress.city || shippingCity}, {parsedAddress.state || shippingState} - {parsedAddress.pincode || shippingPincode}
+                        </p>
+                        {parsedAddress.customer_phone && (
+                          <p className="text-gray-600 mt-1">Phone: {parsedAddress.customer_phone}</p>
+                        )}
+                        {parsedAddress.customer_email && (
+                          <p className="text-gray-600">Email: {parsedAddress.customer_email}</p>
+                        )}
+                      </>
+                    );
+                  } else {
+                    // Regular string display
+                    return (
+                      <>
+                        <p className="text-gray-600">{shippingAddress}</p>
+                        <p className="text-gray-600">{shippingCity}, {shippingState} - {shippingPincode}</p>
+                      </>
+                    );
+                  }
+                } catch (e) {
+                  // If parsing fails, display the original strings
+                  return (
+                    <>
+                      <p className="text-gray-600">{shippingAddress}</p>
+                      <p className="text-gray-600">{shippingCity}, {shippingState} - {shippingPincode}</p>
+                    </>
+                  );
+                }
+              })()}
             </div>
 
             {shippingDetails?.courier_name && (

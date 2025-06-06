@@ -16,6 +16,7 @@ import DashboardOverview from '@/components/admin/DashboardOverview';
 import ProductManagement from '@/components/admin/ProductManagement';
 import CarouselManagement from '@/components/admin/CarouselManagement';
 import ContactMessagesManagement from '@/components/admin/ContactMessagesManagement';
+import SalesInquiriesManagement from '@/components/admin/SalesInquiriesManagement';
 
 const ADMIN_USER_ID = 'a3301900-bf5e-4afe-a114-d59bb08a05a1';
 
@@ -166,6 +167,7 @@ const AdminDashboard = () => {
           <TabsTrigger value="coupons" className="text-base whitespace-nowrap">Coupons</TabsTrigger>
           <TabsTrigger value="carousel" className="text-base whitespace-nowrap">Carousel</TabsTrigger>
           <TabsTrigger value="messages" className="text-base whitespace-nowrap">Messages</TabsTrigger>
+          <TabsTrigger value="sales" className="text-base whitespace-nowrap">Sales Inquiries</TabsTrigger>
         </TabsList>
         
         <TabsContent value="overview">
@@ -218,6 +220,10 @@ const AdminDashboard = () => {
         
         <TabsContent value="messages">
           <ContactMessagesManagement />
+        </TabsContent>
+
+        <TabsContent value="sales">
+          <SalesInquiriesManagement />
         </TabsContent>
       </Tabs>
     </div>

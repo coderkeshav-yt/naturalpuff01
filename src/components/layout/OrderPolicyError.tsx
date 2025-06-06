@@ -6,8 +6,12 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Loader2 } from 'lucide-react';
 
+interface OrderPolicyErrorProps {
+  onFix?: () => Promise<boolean>;
+}
+
 // This is a utility component to help administrators understand and fix RLS policy errors
-const OrderPolicyError = () => {
+const OrderPolicyError = ({ onFix }: OrderPolicyErrorProps) => {
   const { toast } = useToast();
   const [isFixing, setIsFixing] = useState(false);
   const [isFixed, setIsFixed] = useState(false);
@@ -16,12 +20,20 @@ const OrderPolicyError = () => {
     setIsFixing(true);
 
     try {
-      // Call our dedicated edge function to fix order permissions
-      const { data, error } = await supabase.functions.invoke('fixOrderPermissions');
+      // Use provided onFix function if available, otherwise use default implementation
+      if (onFix) {
+        const result = await onFix();
+        if (!result) {
+          throw new Error('Failed to fix permissions');
+        }
+      } else {
+        // Call our dedicated edge function to fix order permissions
+        const { data, error } = await supabase.functions.invoke('fixOrderPermissions');
 
-      if (error) {
-        console.error("RLS policy configuration error:", error);
-        throw error;
+        if (error) {
+          console.error("RLS policy configuration error:", error);
+          throw error;
+        }
       }
 
       setIsFixed(true);

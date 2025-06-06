@@ -34,15 +34,71 @@ const SalesTeam = () => {
     setIsSubmitting(true);
     
     try {
-      // Use direct fetch API to insert the contact message
+      // Validate required fields
+      if (!formData.name.trim() || !formData.email.trim() || !formData.message.trim()) {
+        toast({
+          title: "Missing Information",
+          description: "Please fill in all required fields.",
+          variant: "destructive"
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
       console.log('Submitting sales inquiry with data:', formData);
 
-      // Define the Supabase URL and anon key
+      // Define Supabase API credentials
       const SUPABASE_URL = 'https://nmpaafoonvivsdxcbaoe.supabase.co';
       const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5tcGFhZm9vbnZpdnNkeGNiYW9lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU4OTYzOTcsImV4cCI6MjA2MTQ3MjM5N30.iAB0e2wl-TwGlFcE8gqCTgyUxFj7i9HSKv-bKMod8nU';
 
-      // Use fetch API to directly call the Supabase REST API
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/sales_inquiries`, {
+      // First, let's try to create the table if it doesn't exist
+      try {
+        // Use direct fetch API to create the table if needed
+        const createTableResponse = await fetch(`${SUPABASE_URL}/rest/v1/rpc/create_sales_inquiries_table`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          },
+          body: JSON.stringify({})
+        });
+        
+        console.log('Table creation response status:', createTableResponse.status);
+        
+        // Check if the function executed successfully
+        if (createTableResponse.ok) {
+          console.log('Table creation function executed successfully');
+        } else {
+          const errorText = await createTableResponse.text();
+          console.error('Table creation function error:', errorText);
+        }
+      } catch (tableError) {
+        console.error('Table creation exception:', tableError);
+        // Continue anyway, as the table might already exist
+      }
+
+      // For debugging, let's try to check if the table exists directly
+      try {
+        const tableCheckResponse = await fetch(`${SUPABASE_URL}/rest/v1/sales_inquiries?limit=0`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          }
+        });
+        console.log('Table check response status:', tableCheckResponse.status);
+        if (tableCheckResponse.status === 404) {
+          console.error('Table does not exist or is not accessible');
+        }
+      } catch (e) {
+        console.error('Error checking if table exists:', e);
+      }
+
+      // Now insert the inquiry using direct fetch API
+      console.log('Attempting to insert inquiry data');
+      const insertResponse = await fetch(`${SUPABASE_URL}/rest/v1/sales_inquiries`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -54,42 +110,41 @@ const SalesTeam = () => {
           name: formData.name,
           email: formData.email,
           phone: formData.phone || null,
-          company: formData.company,
-          location: formData.location,
-          order_size: formData.orderSize,
+          company: formData.company || null,
+          location: formData.location || null,
+          order_size: formData.orderSize || null,
           message: formData.message,
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
+          responded: false,
+          notes: null,
+          responded_at: null
         })
       });
 
-      console.log('Response status:', response.status);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Error response:', errorText);
-        toast({
-          title: "Error Submitting Inquiry",
-          description: "There was a problem sending your inquiry. Please try again later.",
-          variant: "destructive"
-        });
-      } else {
-        // If we get here, the message was sent successfully
-        toast({
-          title: "Inquiry Submitted!",
-          description: "Thank you for your interest. Our sales team will contact you shortly.",
-        });
-        
-        // Reset form after successful submission
-        setFormData({
-          name: '',
-          email: '',
-          phone: '',
-          company: '',
-          location: '',
-          orderSize: '',
-          message: ''
-        });
+      console.log('Insert response status:', insertResponse.status);
+      if (!insertResponse.ok) {
+        const errorText = await insertResponse.text();
+        console.error('Error response text:', errorText);
+        throw new Error(`Failed to submit inquiry: ${insertResponse.status} - ${errorText}`);
       }
+
+      // If we get here, the message was sent successfully
+      console.log('Inquiry submitted successfully');
+      toast({
+        title: "Inquiry Submitted!",
+        description: "Thank you for your interest. Our sales team will contact you shortly.",
+      });
+      
+      // Reset form after successful submission
+      setFormData({
+        name: '',
+        email: '',
+        phone: '',
+        company: '',
+        location: '',
+        orderSize: '',
+        message: ''
+      });
     } catch (error) {
       console.error('Exception submitting sales inquiry:', error);
       toast({
@@ -145,19 +200,18 @@ const SalesTeam = () => {
               Interested in wholesale orders or business partnerships? Our dedicated sales team is ready to assist you with pricing, bulk orders, and customized solutions.
             </p>
             <div className="flex flex-wrap justify-center gap-4">
-              <Button 
-                className="bg-gold-500 hover:bg-gold-600 text-brand-800 font-medium px-8 py-6 text-lg shadow-lg hover:shadow-xl transition-all duration-300"
+              <button
+                className="inline-flex items-center justify-center whitespace-nowrap rounded-lg font-medium transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-gold-500 hover:bg-gold-600 text-brand-800 px-8 py-3 text-lg shadow-lg hover:shadow-xl w-[220px] border-b-2 border-gold-600"
                 onClick={() => document.getElementById('inquiry-form')?.scrollIntoView({ behavior: 'smooth' })}
               >
                 Submit an Inquiry
-              </Button>
-              <Button 
-                variant="outline" 
-                className="border-2 border-white text-white hover:bg-white/10 px-8 py-6 text-lg"
+              </button>
+              <button
+                className="inline-flex items-center justify-center whitespace-nowrap rounded-lg font-medium transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-white text-white hover:bg-white/10 px-8 py-3 text-lg w-[220px] backdrop-blur-sm shadow-md hover:shadow-lg"
                 onClick={() => document.getElementById('team-info')?.scrollIntoView({ behavior: 'smooth' })}
               >
                 Meet Our Team
-              </Button>
+              </button>
             </div>
           </motion.div>
         </div>
@@ -589,19 +643,18 @@ const SalesTeam = () => {
               Join our growing network of retailers and distributors. Contact our sales team today to discuss how we can help grow your business with our premium makhana products.
             </p>
             <div className="flex flex-wrap justify-center gap-4">
-              <Button 
-                className="bg-gold-500 hover:bg-gold-600 text-brand-800 font-medium px-8 py-6 text-lg shadow-lg hover:shadow-xl transition-all duration-300"
+              <button
+                className="inline-flex items-center justify-center whitespace-nowrap rounded-lg font-medium transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-gold-500 hover:bg-gold-600 text-brand-800 px-8 py-3 text-lg shadow-lg hover:shadow-xl w-[220px] border-b-2 border-gold-600"
                 onClick={() => document.getElementById('inquiry-form')?.scrollIntoView({ behavior: 'smooth' })}
               >
                 Submit an Inquiry
-              </Button>
-              <Button 
-                variant="outline" 
-                className="border-2 border-white text-white hover:bg-white/10 px-8 py-6 text-lg"
+              </button>
+              <button
+                className="inline-flex items-center justify-center whitespace-nowrap rounded-lg font-medium transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-white text-white hover:bg-white/10 px-8 py-3 text-lg w-[220px] backdrop-blur-sm shadow-md hover:shadow-lg"
                 onClick={() => window.location.href = 'mailto:sales@naturalpuff.com'}
               >
                 Email Sales Team
-              </Button>
+              </button>
             </div>
           </motion.div>
         </div>

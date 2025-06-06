@@ -320,13 +320,6 @@ const Profile = () => {
           <div className="bg-brand-600 py-4 px-6">
             <div className="flex justify-between items-center">
               <h1 className="text-2xl font-bold text-white font-playfair">My Account</h1>
-              <Button 
-                variant="outline" 
-                className="border-white text-white hover:bg-white hover:text-brand-600"
-                onClick={signOut}
-              >
-                Sign Out
-              </Button>
             </div>
           </div>
           
@@ -511,7 +504,7 @@ const Profile = () => {
                         <TableBody>
                           {orders.map((order) => (
                             <TableRow key={order.id}>
-                              <TableCell className="font-medium">{order.id.substring(0, 8)}...</TableCell>
+                              <TableCell className="font-medium">{order.id}</TableCell>
                               <TableCell>{formatDate(order.created_at)}</TableCell>
                               <TableCell>₹{order.total_amount}</TableCell>
                               <TableCell>
@@ -546,7 +539,7 @@ const Profile = () => {
                         <div className="bg-cream-50 rounded-lg p-6 mb-6">
                           <div className="flex justify-between items-start mb-4">
                             <div>
-                              <h3 className="text-lg font-bold">Order #{selectedOrder.id.substring(0, 8)}...</h3>
+                              <h3 className="text-lg font-bold">Order #{selectedOrder.id}</h3>
                               <p className="text-gray-600">{formatDate(selectedOrder.created_at)}</p>
                             </div>
                             {getStatusBadge(selectedOrder.status)}

@@ -1,4 +1,16 @@
 import React, { useState, useEffect } from 'react';
+
+// Define the Supabase coupon data type
+interface SupabaseCoupon {
+  id: string;
+  code: string;
+  discount_percent: number;
+  is_active: boolean;
+  expires_at: string | null;
+  min_order_value?: number | null;
+  created_at: string;
+  created_by: string;
+}
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from '@/components/ui/button';
@@ -8,110 +20,166 @@ import { useCart } from '@/contexts/CartContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Separator } from '@/components/ui/separator';
-import { Minus, Plus, Trash, Tag, Loader2, CreditCard, MapPin } from 'lucide-react';
+import { Minus, Plus, Trash, Tag, Loader2, CreditCard, MapPin, Truck, CreditCard as CreditCardIcon, DollarSign, ShoppingBag, ShoppingCart } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Label } from "@/components/ui/label";
 import { CustomerInfo, Coupon } from '@/types/product';
 import CheckoutForm from '@/components/checkout/CheckoutForm';
 import ShiprocketServiceabilityChecker from '@/components/checkout/ShiprocketServiceability';
-import { processPayment, loadRazorpayScript } from '@/services/razorpayService';
-import ProcessingOverlay from '@/components/payment/ProcessingOverlay';
-import DirectUpiHandler from '@/components/DirectUpiHandler';
+import { processPayment } from '@/services/razorpayService';
 import { loadScript } from '@/lib/utils';
 import OrderPolicyError from '@/components/layout/OrderPolicyError';
 import DirectPermissionFix from '@/components/admin/DirectPermissionFix';
 
 const Checkout = () => {
-  const navigate = useNavigate();
-  const { toast } = useToast();
-  const { items, totalPrice, clearCart, removeItem, updateQuantity, applyCoupon, removeCoupon, finalTotal: cartFinalTotal, discountAmount: cartDiscountAmount, appliedCoupon: cartAppliedCoupon } = useCart();
+  const { items, totalPrice, clearCart, updateQuantity, removeItem } = useCart();
   const { user } = useAuth();
+  const { toast } = useToast();
+  const navigate = useNavigate();
 
-  // State variables
+  const [checkoutStep, setCheckoutStep] = useState(1);
   const [isProcessing, setIsProcessing] = useState(false);
   const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(null);
-  const [checkoutStep, setCheckoutStep] = useState(1);
-  const [paymentMethod, setPaymentMethod] = useState('cod');
   const [showRLSError, setShowRLSError] = useState(false);
-  const [pincode, setPincode] = useState('');
+  
+  // Payment and shipping state
+  const [paymentMethod, setPaymentMethod] = useState<string>('cod');
   const [shippingCost, setShippingCost] = useState(0);
   const [selectedCourier, setSelectedCourier] = useState('');
-  const [courierOptions, setCourierOptions] = useState([]);
+  const [pincode, setPincode] = useState('');
+  const [isRazorpayReady, setIsRazorpayReady] = useState(false);
+  
+  // Coupon state
   const [couponCode, setCouponCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<SupabaseCoupon | null>(null);
   const [isCouponLoading, setIsCouponLoading] = useState(false);
   const [discountAmount, setDiscountAmount] = useState(0);
-  const [finalTotal, setFinalTotal] = useState(0);
-  const [showUpiPayment, setShowUpiPayment] = useState(false);
-  const [currentOrderId, setCurrentOrderId] = useState('');
-  const [upiApp, setUpiApp] = useState('');
-
+  
   // Calculate final total
+  const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const finalTotal = subtotal - discountAmount + shippingCost;
+
+  // Check if cart is empty and redirect if needed
   useEffect(() => {
-    setDiscountAmount(cartDiscountAmount);
-    setFinalTotal(cartFinalTotal + shippingCost);
-  }, [cartFinalTotal, cartDiscountAmount, shippingCost]);
+    // Save checkout state to session storage
+    if (items.length > 0) {
+      sessionStorage.setItem('checkoutItems', JSON.stringify(items));
+    } else {
+      // If cart is empty, try to restore from session storage
+      const savedItems = sessionStorage.getItem('checkoutItems');
+      if (!savedItems || savedItems === '[]') {
+        // No saved items, redirect to products page
+        navigate('/products');
+        toast({
+          title: "Cart Empty",
+          description: "Your cart is empty. Please add items before checkout."
+        });
+      }
+    }
+  }, [items, navigate]);
+
+  // Initialize Razorpay on component mount
+  useEffect(() => {
+    const loadRazorpay = async () => {
+      const loaded = await loadScript('https://checkout.razorpay.com/v1/checkout.js');
+      setIsRazorpayReady(loaded);
+      if (!loaded) {
+        toast({
+          title: "Warning",
+          description: "Failed to load Razorpay. Online payment may not work.",
+          variant: "destructive"
+        });
+      }
+    };
+
+    loadRazorpay();
+  }, []);
 
   // Handle quantity change
-  const handleQuantityChange = (id: number, quantity: number) => {
-    updateQuantity(id, quantity);
+  const handleQuantityChange = (id: number, change: number) => {
+    const item = items.find(item => item.id === id);
+    if (item) {
+      // If change is negative, decrease quantity but not below 1
+      // If change is positive, increase quantity
+      const newQuantity = Math.max(1, item.quantity + change);
+      updateQuantity(id, newQuantity);
+    }
   };
 
   // Apply coupon
   const handleApplyCoupon = async () => {
-    if (!couponCode.trim()) return;
-    
+    if (!couponCode.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter a coupon code.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setIsCouponLoading(true);
-    
+
     try {
       const { data, error } = await supabase
         .from('coupons')
         .select('*')
-        .eq('code', couponCode.toUpperCase())
-        .eq('active', true)
-        .single();
-      
-      if (error) throw error;
-      
-      if (data) {
-        // Check if coupon is valid
-        const currentDate = new Date();
-        const startDate = data.valid_from ? new Date(data.valid_from) : null;
-        const endDate = data.valid_until ? new Date(data.valid_until) : null;
-        
-        if ((startDate && currentDate < startDate) || (endDate && currentDate > endDate)) {
-          toast({
-            title: "Coupon Expired",
-            description: "This coupon is no longer valid.",
-            variant: "destructive"
-          });
-          return;
-        }
-        
-        // Check minimum order value
-        if (data.min_order_value && totalPrice < data.min_order_value) {
-          toast({
-            title: "Cannot Apply Coupon",
-            description: `Minimum order value of ₹${data.min_order_value} required.`,
-            variant: "destructive"
-          });
-          return;
-        }
-        
-        // Apply coupon
-        applyCoupon(data);
-        
-        toast({
-          title: "Coupon Applied",
-          description: `You got ${data.discount_percent}% off!`,
-        });
-      } else {
+        .eq('code', couponCode.trim())
+        .eq('is_active', true)
+        .single<SupabaseCoupon>();
+
+      if (error) {
         toast({
           title: "Invalid Coupon",
-          description: "This coupon code is invalid.",
+          description: "The coupon code you entered is invalid or has expired.",
           variant: "destructive"
         });
+        setIsCouponLoading(false);
+        return;
       }
+
+      if (!data) {
+        toast({
+          title: "Invalid Coupon",
+          description: "The coupon code you entered is invalid or has expired.",
+          variant: "destructive"
+        });
+        setIsCouponLoading(false);
+        return;
+      }
+
+      // Check if coupon is expired
+      if (data.expires_at && new Date(data.expires_at) < new Date()) {
+        toast({
+          title: "Expired Coupon",
+          description: "This coupon has expired.",
+          variant: "destructive"
+        });
+        setIsCouponLoading(false);
+        return;
+      }
+
+      // Check if the cart total meets the minimum order value requirement
+      if (data.min_order_value && subtotal < data.min_order_value) {
+        toast({
+          title: "Minimum Order Value Not Met",
+          description: `This coupon requires a minimum order of ₹${data.min_order_value}. Your current order is ₹${subtotal.toFixed(2)}.`,
+          variant: "destructive"
+        });
+        setIsCouponLoading(false);
+        return;
+      }
+
+      // Apply the coupon
+      setAppliedCoupon(data);
+      
+      // Calculate discount
+      const discount = (subtotal * data.discount_percent) / 100;
+      setDiscountAmount(discount);
+      
+      toast({
+        title: "Coupon Applied",
+        description: `You got ${data.discount_percent}% off!`,
+      });
     } catch (error) {
       console.error('Error applying coupon:', error);
       toast({
@@ -126,7 +194,8 @@ const Checkout = () => {
 
   // Remove coupon
   const handleRemoveCoupon = () => {
-    removeCoupon();
+    setAppliedCoupon(null);
+    setDiscountAmount(0);
     setCouponCode('');
     toast({
       title: "Coupon Removed",
@@ -136,131 +205,30 @@ const Checkout = () => {
 
   // Handle form submission
   const handleFormSubmit = (formData: CustomerInfo) => {
-    try {
-      console.log('Form submitted with data:', formData);
-      setCustomerInfo(formData);
-      setPincode(formData.pincode);
-      setCheckoutStep(2);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      
-      // Automatically check pincode availability
-      setTimeout(() => {
-        if (formData.pincode && formData.pincode.length === 6) {
-          console.log('Auto-checking pincode:', formData.pincode);
-          const mockCourierOptions = [
-            {
-              courier_name: "DTDC",
-              courier_code: "1",
-              rate: 120,
-              etd: "2-3 days",
-              serviceability_type: "surface"
-            },
-            {
-              courier_name: "Delhivery",
-              courier_code: "2",
-              rate: 150,
-              etd: "1-2 days",
-              serviceability_type: "air"
-            }
-          ];
-          
-          setCourierOptions(mockCourierOptions);
-          setSelectedCourier(mockCourierOptions[0].courier_code);
-          setShippingCost(mockCourierOptions[0].rate);
-          
-          toast({
-            title: "Delivery Available",
-            description: "We can deliver to your location.",
-            variant: "default"
-          });
-        }
-      }, 500);
-    } catch (error) {
-      console.error('Error in handleFormSubmit:', error);
+    setCustomerInfo(formData);
+    setPincode(formData.pincode);
+    setCheckoutStep(2);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Completely rewritten payment handler using our new simplified service
+  const handleRazorpayPayment = async (orderId: string) => {
+    // Validate customer information
+    if (!customerInfo) {
       toast({
         title: "Error",
-        description: "There was a problem processing your information. Please try again.",
+        description: "Customer information is missing.",
         variant: "destructive"
       });
+      return false;
     }
-  };
-
-  // Handle UPI direct payment
-  const handleUpiDirectPayment = async () => {
+    
+    setIsProcessing(true);
+    
     try {
-      setIsProcessing(true);
-      console.log('Starting UPI direct payment flow');
+      console.log('Starting payment process for order:', orderId);
       
-      if (!upiApp) {
-        toast({
-          title: "Select UPI App",
-          description: "Please select a UPI app to continue",
-          variant: "destructive"
-        });
-        setIsProcessing(false);
-        return;
-      }
-      
-      // Create order first
-      const orderId = await createOrder(finalTotal - shippingCost);
-      
-      if (!orderId) {
-        console.error('Failed to create order for UPI payment');
-        setIsProcessing(false);
-        return;
-      }
-      
-      console.log('Order created successfully for UPI payment:', orderId);
-      
-      // Set current order ID for UPI handler
-      setCurrentOrderId(orderId);
-      
-      // Store order ID in localStorage for verification after app redirect
-      localStorage.setItem('current_order_id', orderId);
-      
-      setShowUpiPayment(true);
-      setIsProcessing(false);
-      
-    } catch (error: any) {
-      console.error('Error in UPI direct payment:', error);
-      toast({
-        title: "Payment Error",
-        description: error.message || "Failed to initiate UPI payment. Please try again.",
-        variant: "destructive"
-      });
-      setIsProcessing(false);
-    }
-  };
-
-  // Handle Razorpay payment
-  const handleRazorpayPayment = async () => {
-    try {
-      setIsProcessing(true);
-      console.log('Starting Razorpay payment flow');
-      
-      // Create order first
-      const orderId = await createOrder(finalTotal - shippingCost);
-      
-      if (!orderId) {
-        console.error('Failed to create order for Razorpay payment');
-        setIsProcessing(false);
-        return;
-      }
-      
-      console.log('Order created successfully:', orderId);
-      
-      // Ensure customer info is available
-      if (!customerInfo) {
-        toast({
-          title: 'Error',
-          description: 'Customer information is missing',
-          variant: 'destructive',
-        });
-        setIsProcessing(false);
-        return;
-      }
-      
-      // Process payment using the razorpayService
+      // Use our new simplified payment process function
       await processPayment(
         finalTotal,
         orderId,
@@ -269,326 +237,364 @@ const Checkout = () => {
           email: customerInfo.email,
           phone: customerInfo.phone
         },
+        // Success handler
         (response) => {
-          // Success callback
           console.log('Payment successful:', response);
-          handlePaymentSuccess(response, orderId);
+          if (!response.razorpay_payment_id || !response.razorpay_order_id || !response.razorpay_signature) {
+            toast({
+              title: "Payment Error",
+              description: "Received invalid payment response. Please contact support.",
+              variant: "destructive"
+            });
+            setIsProcessing(false);
+            return;
+          }
+          
+          handlePaymentSuccess({
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_signature: response.razorpay_signature,
+          }, orderId);
         },
+        // Failure handler
         (error) => {
-          // Failure callback
           console.error('Payment failed:', error);
-          toast({
-            title: "Payment Error",
-            description: error.message || "Failed to process payment. Please try again.",
-            variant: "destructive"
-          });
+          handlePaymentFailure(orderId, error.message || "Payment failed. Please try again later.");
           setIsProcessing(false);
         }
       );
       
+      return true;
     } catch (error: any) {
-      console.error('Error in Razorpay payment:', error);
-      toast({
-        title: "Payment Error",
-        description: error.message || "Failed to process payment. Please try again.",
-        variant: "destructive"
-      });
+      console.error('Payment error:', error);
+      handlePaymentFailure(orderId, error.message || "Failed to initialize payment. Please try again later.");
       setIsProcessing(false);
+      return false;
     }
   };
 
   // Handle payment success
-  const handlePaymentSuccess = async (response: any, orderId: string) => {
+  const handlePaymentSuccess = async (
+    response: {
+      razorpay_payment_id: string;
+      razorpay_order_id: string;
+      razorpay_signature: string;
+    },
+    orderId: string
+  ) => {
+    console.log('Processing payment success:', { 
+      paymentId: response.razorpay_payment_id,
+      orderId: orderId 
+    });
+    
+    setIsProcessing(true);
+    
     try {
-      const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = response;
+      // Validate response parameters
+      if (!response.razorpay_payment_id || !response.razorpay_order_id || !response.razorpay_signature) {
+        throw new Error('Invalid payment response: Missing required fields');
+      }
       
-      // Verify payment
-      const { data, error } = await supabase
+      if (!orderId) {
+        throw new Error('Invalid order ID');
+      }
+      
+      // Verify payment with Razorpay via Supabase Edge Function
+      console.log('Verifying payment with Razorpay...');
+      const { data: verificationData, error: verificationError } = await supabase.functions.invoke('verifyRazorpayPayment', {
+        body: {
+          razorpay_payment_id: response.razorpay_payment_id,
+          razorpay_order_id: response.razorpay_order_id,
+          razorpay_signature: response.razorpay_signature
+        }
+      });
+      
+      if (verificationError) {
+        console.error('Payment verification error:', verificationError);
+        throw new Error(`Payment verification failed: ${verificationError.message || 'Unknown error'}`);
+      }
+      
+      if (!verificationData || verificationData.status !== 'success') {
+        console.error('Payment verification failed:', verificationData);
+        throw new Error('Payment verification failed: Invalid signature');
+      }
+      
+      console.log('Payment verified successfully, updating order status...');
+      
+      // Update order status with payment details
+      const { data: orderData, error: orderError } = await supabase
         .from('orders')
         .update({
-          payment_id: razorpay_payment_id,
-          payment_status: 'completed',
-          status: 'processing'
+          status: 'paid',
+          payment_id: JSON.stringify({
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_signature: response.razorpay_signature,
+            payment_status: 'paid',
+            payment_date: new Date().toISOString(),
+            verified: true
+          })
         })
         .eq('id', orderId)
         .select();
+
+      if (orderError) {
+        console.error('Payment success update error:', orderError);
+        throw new Error(`Failed to update order: ${orderError.message}`);
+      }
       
-      if (error) throw error;
+      if (!orderData || orderData.length === 0) {
+        throw new Error('Order not found or could not be updated');
+      }
+
+      console.log('Order updated successfully:', orderData[0].id);
       
-      // Send order notification
-      setTimeout(() => {
-        fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sendOrderNotification`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
-          },
-          body: JSON.stringify({
-            orderId,
-            paymentId: razorpay_payment_id,
-            customerName: customerInfo?.name,
-            customerEmail: customerInfo?.email,
-            customerPhone: customerInfo?.phone
-          })
-        }).then(() => {
-          console.log('Order notification sent successfully');
-        }).catch((emailError) => {
-          console.error('Failed to send order notification:', emailError);
-        });
-      }, 100);
-      
-      // Clear cart and navigate to success page
-      clearCart();
+      // Show success message
       toast({
         title: "Payment Successful",
-        description: "Your order has been placed successfully!"
+        description: "Your payment has been processed successfully. Thank you for your order!",
       });
-      
-      // Navigate to order success page
-      setTimeout(() => {
-        navigate(`/order-success?id=${orderId}`);
-      }, 1000);
+
+      // Clear cart and redirect to success page
+      clearCart();
+      navigate(`/order-success?id=${orderId}`);
     } catch (error: any) {
-      console.error('Error processing payment:', error);
+      console.error('Payment success handling error:', error);
+      
+      // Show error message
       toast({
-        title: "Payment Error",
-        description: error.message || "Failed to process your payment. Please contact support.",
+        title: "Payment Processing Error",
+        description: error.message || "There was a problem processing your payment confirmation.",
         variant: "destructive"
       });
       
-      navigate('/checkout');
+      // Redirect to order page with error flag
+      if (orderId) {
+        navigate(`/order-success?id=${orderId}&payment=failed`);
+      }
+    } finally {
+      setIsProcessing(false);
     }
   };
 
-  // Handle payment failure
-  const handlePaymentFailure = async (orderId: string, errorMessage: string) => {
+  // Helper function to handle payment failures consistently
+  const handlePaymentFailure = (orderId: string, errorMessage: string) => {
+    // Log the error
+    console.error(`Payment failure for order ${orderId}: ${errorMessage}`);
+    
+    // Update the order status
+    updateOrderPaymentStatus(orderId, 'payment_failed');
+    
+    // Show error toast
+    toast({
+      title: "Payment Error",
+      description: errorMessage,
+      variant: "destructive"
+    });
+    
+    // Redirect to order success page with payment=failed parameter
+    navigate(`/order-success?id=${orderId}&payment=failed`);
+  };
+
+  // Helper function to update order payment status with retry logic
+  const updateOrderPaymentStatus = async (orderId: string, status: string) => {
     try {
-      // Update order status
-      await supabase
-        .from('orders')
-        .update({
-          payment_status: 'failed',
-          status: 'payment_failed'
-        })
-        .eq('id', orderId);
+      console.log(`Updating order ${orderId} payment status to ${status}`);
       
-      toast({
-        title: "Payment Failed",
-        description: errorMessage || "Your payment could not be processed. Please try again.",
-        variant: "destructive"
-      });
+      // Try up to 3 times to update the order status
+      let attempts = 0;
+      let success = false;
+      
+      while (attempts < 3 && !success) {
+        attempts++;
+        console.log(`Attempt ${attempts} to update order status`);
+        
+        const { error } = await supabase
+          .from('orders')
+          .update({ 
+            status: status, // Use the status field instead of payment_status
+            payment_id: JSON.stringify({ payment_status: status, updated_at: new Date().toISOString() })
+          })
+          .eq('id', orderId);
+        
+        if (error) {
+          console.error(`Error updating order status (attempt ${attempts}):`, error);
+          // Wait a bit before retrying
+          if (attempts < 3) await new Promise(r => setTimeout(r, 1000));
+        } else {
+          console.log(`Successfully updated order ${orderId} status to ${status}`);
+          success = true;
+        }
+      }
+      
+      if (!success) {
+        toast({
+          title: "Database Error",
+          description: "Failed to update order status. Please contact support.",
+          variant: "destructive"
+        });
+      }
     } catch (error) {
-      console.error('Error updating failed payment status:', error);
+      console.error('Error updating order payment status:', error);
+      toast({
+        title: "System Error",
+        description: "An unexpected error occurred while updating your order.",
+        variant: "destructive"
+      });
     }
   };
 
-  // Create order
-  const createOrder = async (amount: number) => {
+  // Fix database permissions
+  const fixDatabasePermissions = async () => {
     try {
-      console.log('Creating order with amount:', amount);
-      console.log('Customer info:', customerInfo);
-      console.log('Selected courier:', selectedCourier);
-      console.log('Shipping cost:', shippingCost);
+      console.log('Attempting to fix database permissions...');
+      const { data, error } = await supabase.functions.invoke('fixOrderPermissions');
       
-      if (!customerInfo) {
+      if (error) {
+        console.error('Error fixing database permissions:', error);
         toast({
           title: 'Error',
-          description: 'Please enter your information first',
-          variant: 'destructive',
+          description: 'Failed to fix database permissions. Please try again later.',
+          variant: 'destructive'
         });
-        return null;
+        return false;
       }
       
-      // Validate shipping cost
-      if (selectedCourier === '' || shippingCost <= 0) {
-        toast({
-          title: 'Error',
-          description: 'Please select a shipping method',
-          variant: 'destructive',
-        });
-        return null;
-      }
+      console.log('Database permissions fixed:', data);
+      toast({
+        title: 'Success',
+        description: 'Database permissions fixed successfully.',
+      });
       
-      // Create order items
+      setShowRLSError(false);
+      return true;
+    } catch (error) {
+      console.error('Error fixing database permissions:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to fix database permissions. Please try again later.',
+        variant: 'destructive'
+      });
+      return false;
+    }
+  };
+  
+  // Place order
+  const handlePlaceOrder = async () => {
+    if (!customerInfo) {
+      toast({
+        title: "Error",
+        description: "Please fill in your information first.",
+        variant: "destructive"
+      });
+      setCheckoutStep(1);
+      return;
+    }
+    
+    if (!selectedCourier || shippingCost === 0) {
+      toast({
+        title: "Error",
+        description: "Please select a shipping method.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    setIsProcessing(true);
+    
+    try {
+      // Create order in database
       const orderItems = items.map(item => ({
         product_id: item.id,
         quantity: item.quantity,
         price: item.price,
-        product_name: item.name, // Use product_name instead of name to match the schema
-        image_url: item.image_url || ''
+        name: item.name,
+        image_url: item.image_url
       }));
       
-      console.log('Order items:', orderItems);
-      
-      // Get selected courier info
-      const selectedCourierInfo = courierOptions.find((c: any) => c.courier_code === selectedCourier) || {
-        courier_name: 'Standard Delivery',
-        rate: shippingCost,
-        etd: '3-5 days'
-      };
-      
-      console.log('Selected courier info:', selectedCourierInfo);
-      
-      // Simplified order creation to avoid potential issues
+      // Create order data with fields matching the database schema
       const orderData = {
         total_amount: finalTotal,
+        status: 'pending',
         user_id: user?.id || null,
+        // Store all other order details as JSON in shipping_address
         shipping_address: JSON.stringify({
-          name: customerInfo.name,
+          customer_name: customerInfo.name,
+          customer_email: customerInfo.email,
+          customer_phone: customerInfo.phone,
           address: customerInfo.address,
           city: customerInfo.city,
           state: customerInfo.state,
           pincode: customerInfo.pincode,
-          email: customerInfo.email,
-          phone: customerInfo.phone,
+          subtotal: subtotal,
+          discount: discountAmount,
           shipping_cost: shippingCost,
-          courier_name: selectedCourierInfo.courier_name
-        }),
-        status: 'pending'
+          payment_method: paymentMethod,
+          payment_status: paymentMethod === 'cod' ? 'pending' : 'initiated',
+          items: orderItems,
+          courier_name: selectedCourier,
+          ...(appliedCoupon ? {
+            coupon_code: appliedCoupon.code,
+            coupon_discount_percent: appliedCoupon.discount_percent
+          } : {})
+        })
       };
       
-      console.log('Order data being inserted:', orderData);
+      console.log('Creating order with data:', { ...orderData, items: `${orderItems.length} items` });
       
-      // Create order in database
-      const { data, error } = await supabase
+      const { data: order, error: orderError } = await supabase
         .from('orders')
         .insert(orderData)
         .select()
         .single();
       
-      if (error) {
-        console.error('Error inserting order:', error);
-        // Check for RLS policy error
-        if (error.message.includes('policy')) {
-          console.log('RLS policy error detected');
+      if (orderError) {
+        console.error('Error creating order:', orderError);
+        
+        // Check if this is an RLS error
+        if (orderError.message.includes('policy') || orderError.message.includes('permission')) {
+          console.log('Detected RLS error, showing permission fix option');
           setShowRLSError(true);
-          return null;
+          throw new Error('Database permission error. Please use the "Fix Permissions" button below.');
         }
         
-        throw error;
+        throw new Error(`Failed to create order: ${orderError.message}`);
       }
       
-      if (data) {
-        console.log('Order created successfully:', data);
-        
-        // Insert order items
-        try {
-          const orderItemsWithId = orderItems.map(item => ({
-            order_id: data.id,
-            product_id: item.product_id,
-            quantity: item.quantity,
-            price: item.price,
-            product_name: item.product_name
-          }));
-          
-          console.log('Inserting order items:', orderItemsWithId);
-          
-          const { error: itemsError } = await supabase
-            .from('order_items')
-            .insert(orderItemsWithId);
-          
-          if (itemsError) {
-            console.error('Error inserting order items:', itemsError);
-            // Continue even if order items insertion fails
-            // We'll handle this case better
-          }
-        } catch (itemsError) {
-          console.error('Error in order items insertion:', itemsError);
-          // Continue with the order even if items insertion fails
-        }
-        
-        toast({
-          title: 'Order Created',
-          description: `Order #${data.id} has been created.`
-        });
-        
-        setCurrentOrderId(data.id);
-        return data.id;
+      if (!order) {
+        throw new Error('Failed to create order: No order data returned');
       }
       
-      return null;
-    } catch (error: any) {
-      console.error('Error creating order:', error);
-      toast({
-        title: 'Order Error',
-        description: error.message || 'Failed to create your order. Please try again.',
-        variant: 'destructive'
-      });
-      setIsProcessing(false);
-      return null;
-    }
-  };
-
-  // Handle place order
-  const handlePlaceOrder = async () => {
-    setIsProcessing(true);
-    
-    try {
-      // Validate customer information
-      if (!customerInfo) {
-        toast({
-          title: 'Error',
-          description: 'Please enter your information first',
-          variant: 'destructive',
-        });
-        setIsProcessing(false);
-        return;
-      }
+      console.log('Order created successfully:', order);
       
-      // Validate shipping cost
-      if (selectedCourier === '' || shippingCost <= 0) {
-        toast({
-          title: 'Error',
-          description: 'Please select a shipping method',
-          variant: 'destructive',
-        });
-        setIsProcessing(false);
-        return;
-      }
-      
-      // Process payment based on method
-      if (paymentMethod === 'razorpay') {
-        await handleRazorpayPayment();
-      } else if (paymentMethod === 'upi_direct') {
-        setShowUpiPayment(true);
-        setIsProcessing(false);
+      // Process payment or redirect based on payment method
+      if (paymentMethod === 'online') {
+        console.log('Processing online payment for order:', order.id);
+        await handleRazorpayPayment(order.id);
       } else {
-        // Cash on delivery
-        const orderId = await createOrder(finalTotal - shippingCost);
+        // COD order - update status and redirect
+        console.log('Processing COD order:', order.id);
         
-        if (orderId) {
-          // Update order status
-          await supabase
-            .from('orders')
-            .update({
-              payment_method: 'cod',
-              payment_status: 'pending',
-              status: 'processing'
-            })
-            .eq('id', orderId);
-          
-          // Clear cart and navigate to success page
-          clearCart();
-          setIsProcessing(false);
-          
-          toast({
-            title: "Order Placed",
-            description: "Your order has been placed successfully!"
-          });
-          
-          // Navigate to order success page
-          setTimeout(() => {
-            navigate(`/order-success?id=${orderId}`);
-          }, 1000);
-        }
+        // Show success message
+        toast({
+          title: "Order Placed",
+          description: "Your order has been placed successfully. Thank you for shopping with us!",
+        });
+        
+        // Clear cart and redirect to success page
+        clearCart();
+        navigate(`/order-success?id=${order.id}`);
       }
     } catch (error: any) {
       console.error('Error placing order:', error);
+      
+      // Show error message
       toast({
         title: "Order Error",
         description: error.message || "Failed to place your order. Please try again.",
         variant: "destructive"
       });
+    } finally {
       setIsProcessing(false);
     }
   };
@@ -598,20 +604,16 @@ const Checkout = () => {
       <h1 className="text-3xl font-bold mb-8">Checkout</h1>
       
       {showRLSError && (
-        <Alert variant="destructive" className="mb-4">
-          <AlertTitle>Database Permission Error</AlertTitle>
-          <AlertDescription>
-            There was an issue with database permissions. Please try again or contact support.
-          </AlertDescription>
-        </Alert>
+        <OrderPolicyError onFix={fixDatabasePermissions} />
       )}
       
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        <div className="md:col-span-2">
-          {checkoutStep === 1 ? (
+      <div className="grid lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2">
+          {/* Step 1: Customer Information */}
+          {checkoutStep === 1 && (
             <Card>
               <CardHeader>
-                <CardTitle>Customer Information</CardTitle>
+                <CardTitle className="text-lg md:text-xl">Contact Information</CardTitle>
               </CardHeader>
               <CardContent>
                 <CheckoutForm 
@@ -621,531 +623,380 @@ const Checkout = () => {
                 />
               </CardContent>
             </Card>
-          ) : (
+          )}
+          
+          {/* Step 2: Shipping & Payment */}
+          {checkoutStep === 2 && (
             <Card>
               <CardHeader>
-                <CardTitle>Payment</CardTitle>
+                <CardTitle className="text-lg md:text-xl">Shipping & Payment</CardTitle>
               </CardHeader>
-              <CardContent>
-                {isProcessing ? (
-                  <ProcessingOverlay 
-                    orderId={currentOrderId} 
-                    onCancel={() => {
-                      setIsProcessing(false);
-                      // Clear payment flags
-                      localStorage.removeItem('payment_in_progress');
-                      sessionStorage.removeItem('np_current_payment');
-                      localStorage.removeItem('np_current_payment');
-                    }} 
-                  />
-                ) : (
-                  <div>
-                    {pincode && (
-                      <div className="mb-6 border rounded-lg p-4 bg-gray-50">
-                        <div className="flex items-center justify-between mb-3">
-                          <h3 className="text-md font-medium">Shipping Options</h3>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm text-muted-foreground">Delivering to:</span>
-                            <span className="font-medium text-sm bg-white px-2 py-1 rounded border">{pincode}</span>
-                          </div>
-                        </div>
-                        
-                        <div className="space-y-4">
-                          <div className="flex items-center space-x-2">
-                            <div className="flex-grow">
-                              <Input
-                                type="text"
-                                placeholder="Enter delivery pincode"
-                                value={pincode}
-                                onChange={(e) => {
-                                  // Only allow numbers and limit to 6 digits
-                                  const value = e.target.value.replace(/[^0-9]/g, '').substring(0, 6);
-                                  setPincode(value);
-                                  
-                                  // Reset selection if pincode changes
-                                  if (value.length !== 6) {
-                                    setSelectedCourier('');
-                                    setShippingCost(0);
-                                    setCourierOptions([]);
-                                  }
-                                }}
-                                className="w-full"
-                                maxLength={6}
-                              />
-                            </div>
-                            <Button 
-                              onClick={() => {
-                                if (!pincode || pincode.length !== 6) {
-                                  toast({
-                                    title: "Invalid Pincode",
-                                    description: "Please enter a valid 6-digit pincode.",
-                                    variant: "destructive"
-                                  });
-                                  return;
-                                }
-                                
-                                // Directly use hardcoded shipping options
-                                const mockCourierOptions = [
-                                  {
-                                    courier_name: "DTDC",
-                                    courier_code: "1",
-                                    rate: 120,
-                                    etd: "2-3 days",
-                                    serviceability_type: "surface"
-                                  },
-                                  {
-                                    courier_name: "Delhivery",
-                                    courier_code: "2",
-                                    rate: 150,
-                                    etd: "1-2 days",
-                                    serviceability_type: "air"
-                                  }
-                                ];
-                                
-                                setCourierOptions(mockCourierOptions);
-                                // Auto-select the first courier option
-                                setSelectedCourier(mockCourierOptions[0].courier_code);
-                                setShippingCost(mockCourierOptions[0].rate);
-                                
-                                toast({
-                                  title: "Delivery Available",
-                                  description: "We can deliver to your location.",
-                                  variant: "default"
-                                });
-                              }}
-                              className="whitespace-nowrap"
-                            >
-                              <MapPin className="mr-2 h-4 w-4" />
-                              Check Availability
-                            </Button>
-                          </div>
+              <CardContent className="space-y-6">
+                {/* Shipping Options */}
+                <div className="bg-gradient-to-r from-green-50 to-teal-50 p-4 rounded-lg border border-green-100">
+                  <h3 className="text-lg font-medium mb-4 text-green-800 flex items-center">
+                    <MapPin className="h-5 w-5 mr-2 text-green-700" />
+                    Shipping Options
+                  </h3>
+                  
+                  <div className="mb-4">
+                    <div className="flex items-center space-x-2">
+                      <Input
+                        type="text"
+                        placeholder="Enter delivery pincode"
+                        value={pincode}
+                        onChange={(e) => {
+                          // Only allow numbers and limit to 6 digits
+                          const value = e.target.value.replace(/[^0-9]/g, '').substring(0, 6);
+                          setPincode(value);
                           
-                          {selectedCourier && (
-                            <div className="space-y-2">
-                              <p className="font-medium">Available Shipping Options:</p>
-                              <RadioGroup value={selectedCourier} onValueChange={(value) => {
-                                setSelectedCourier(value);
-                                const option = courierOptions.find(opt => opt.courier_code === value);
-                                if (option) {
-                                  setShippingCost(option.rate);
-                                }
-                              }}>
-                                {courierOptions.map((option) => (
-                                  <div key={option.courier_code} className="flex items-center space-x-2 p-2 border rounded-md">
-                                    <RadioGroupItem value={option.courier_code} id={`courier-${option.courier_code}`} />
-                                    <Label htmlFor={`courier-${option.courier_code}`} className="flex-grow cursor-pointer">
-                                      <div className="flex justify-between items-center w-full">
-                                        <div>
-                                          <p className="font-medium">{option.courier_name}</p>
-                                          <p className="text-sm text-gray-500">{option.etd}</p>
-                                        </div>
-                                        <p className="font-medium">₹{option.rate.toFixed(2)}</p>
-                                      </div>
-                                    </Label>
-                                  </div>
-                                ))}
-                              </RadioGroup>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                    
-                    <div className="space-y-4">
-                      <h3 className="font-medium text-lg">Payment Method</h3>
-                      <RadioGroup
-                        value={paymentMethod}
-                        onValueChange={setPaymentMethod}
-                        className="space-y-3"
-                      >
-                        <div className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50 transition-colors">
-                          <RadioGroupItem value="cod" id="cod" />
-                          <Label htmlFor="cod" className="flex items-center gap-2 cursor-pointer">
-                            <div className="bg-amber-100 p-2 rounded-full">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-600">
-                                <rect width="20" height="16" x="2" y="4" rx="2" />
-                                <circle cx="12" cy="12" r="4" />
-                                <path d="M12 8v8" />
-                                <path d="M8 12h8" />
-                              </svg>
-                            </div>
-                            <div>
-                              <span className="font-medium">Cash on Delivery</span>
-                              <p className="text-xs text-muted-foreground">Pay when your order arrives</p>
-                            </div>
-                          </Label>
-                        <div className="flex-grow">
-                          <Input
-                            type="text"
-                            placeholder="Enter delivery pincode"
-                            value={pincode}
-                            onChange={(e) => {
-                              // Only allow numbers and limit to 6 digits
-                              const value = e.target.value.replace(/[^0-9]/g, '').substring(0, 6);
-                              setPincode(value);
-                              
-                              // Reset selection if pincode changes
-                              if (value.length !== 6) {
-                                setSelectedCourier('');
-                                setShippingCost(0);
-                                setCourierOptions([]);
-                              }
-                            }}
-                            className="w-full"
-                            maxLength={6}
-                          />
-                        </div>
-                        <Button 
-                          onClick={() => {
-                            if (!pincode || pincode.length !== 6) {
-                              toast({
-                                title: "Invalid Pincode",
-                                description: "Please enter a valid 6-digit pincode.",
-                                variant: "destructive"
-                              });
-                              return;
-                            }
+                          // Automatically check when pincode is 6 digits
+                          if (value.length === 6) {
+                            // Auto-trigger shipping check
+                            console.log('Auto-checking pincode:', value);
                             
-                            // Directly use hardcoded shipping options
-                            const mockCourierOptions = [
+                            // Simulate loading state
+                            const tempCouriers = [
                               {
-                                courier_name: "DTDC",
-                                courier_code: "1",
+                                courier_name: "Express Delivery",
+                                courier_code: "express",
                                 rate: 120,
-                                etd: "2-3 days",
-                                serviceability_type: "surface"
+                                etd: "1-2 days",
+                                serviceability_type: "express"
                               },
                               {
-                                courier_name: "Delhivery",
-                                courier_code: "2",
-                                rate: 150,
-                                etd: "1-2 days",
-                                serviceability_type: "air"
+                                courier_name: "Standard Shipping",
+                                courier_code: "standard",
+                                rate: 80,
+                                etd: "3-5 days",
+                                serviceability_type: "standard"
+                              },
+                              {
+                                courier_name: "Economy Shipping",
+                                courier_code: "economy",
+                                rate: 50,
+                                etd: "5-7 days",
+                                serviceability_type: "economy"
                               }
                             ];
                             
-                            setCourierOptions(mockCourierOptions);
-                            // Auto-select the first courier option
-                            setSelectedCourier(mockCourierOptions[0].courier_code);
-                            setShippingCost(mockCourierOptions[0].rate);
+                            // Automatically select the first courier option
+                            setSelectedCourier(tempCouriers[0].courier_code);
+                            setShippingCost(tempCouriers[0].rate);
                             
                             toast({
                               title: "Delivery Available",
-                              description: "We can deliver to your location.",
+                              description: "We've found delivery options for your location.",
                               variant: "default"
                             });
-                          }}
-                          className="whitespace-nowrap"
+                          } else {
+                            // Reset courier selection if pincode is changed
+                            setSelectedCourier('');
+                            setShippingCost(0);
+                          }
+                        }}
+                        className="flex-grow focus:ring-green-500 focus:border-green-500"
+                        maxLength={6}
+                      />
+                    </div>
+                    
+                    {pincode.length === 6 ? (
+                      <div className="mt-4 space-y-3">
+                        <RadioGroup 
+                          value={selectedCourier} 
+                          onValueChange={setSelectedCourier}
+                          className="space-y-3"
                         >
-                          <MapPin className="mr-2 h-4 w-4" />
-                          Check Availability
-                        </Button>
-                      </div>
-                      
-                      {selectedCourier && (
-                        <div className="space-y-2">
-                          <p className="font-medium">Available Shipping Options:</p>
-                          <RadioGroup value={selectedCourier} onValueChange={(value) => {
-                            setSelectedCourier(value);
-                            const option = courierOptions.find(opt => opt.courier_code === value);
-                            if (option) {
-                              setShippingCost(option.rate);
-                            }
-                          }}>
-                            {courierOptions.map((option) => (
-                              <div key={option.courier_code} className="flex items-center space-x-2 p-2 border rounded-md">
-                                <RadioGroupItem value={option.courier_code} id={`courier-${option.courier_code}`} />
-                                <Label htmlFor={`courier-${option.courier_code}`} className="flex-grow cursor-pointer">
-                                  <div className="flex justify-between items-center w-full">
-                                    <div>
-                                      <p className="font-medium">{option.courier_name}</p>
-                                      <p className="text-sm text-gray-500">{option.etd}</p>
-                                    </div>
-                                    <p className="font-medium">₹{option.rate.toFixed(2)}</p>
-                                  </div>
-                                </Label>
+                          <div onClick={() => {
+                            setSelectedCourier('express');
+                            setShippingCost(120);
+                          }} className={`flex items-center justify-between p-3 rounded-md cursor-pointer transition-all ${selectedCourier === 'express' ? 'bg-green-100 border-green-500 border' : 'bg-white border'}`}>
+                            <div className="flex items-center space-x-3">
+                              <RadioGroupItem value="express" id="express" />
+                              <div>
+                                <p className="font-medium">Express Delivery</p>
+                                <p className="text-sm text-gray-500">1-2 days</p>
                               </div>
-                            ))}
-                          </RadioGroup>
-                        </div>
-                      )}
-                    </div>
+                            </div>
+                            <p className="font-semibold text-green-700">₹120</p>
+                          </div>
+                          
+                          <div onClick={() => {
+                            setSelectedCourier('standard');
+                            setShippingCost(80);
+                          }} className={`flex items-center justify-between p-3 rounded-md cursor-pointer transition-all ${selectedCourier === 'standard' ? 'bg-green-100 border-green-500 border' : 'bg-white border'}`}>
+                            <div className="flex items-center space-x-3">
+                              <RadioGroupItem value="standard" id="standard" />
+                              <div>
+                                <p className="font-medium">Standard Shipping</p>
+                                <p className="text-sm text-gray-500">3-5 days</p>
+                              </div>
+                            </div>
+                            <p className="font-semibold text-green-700">₹80</p>
+                          </div>
+                          
+                          <div onClick={() => {
+                            setSelectedCourier('economy');
+                            setShippingCost(50);
+                          }} className={`flex items-center justify-between p-3 rounded-md cursor-pointer transition-all ${selectedCourier === 'economy' ? 'bg-green-100 border-green-500 border' : 'bg-white border'}`}>
+                            <div className="flex items-center space-x-3">
+                              <RadioGroupItem value="economy" id="economy" />
+                              <div>
+                                <p className="font-medium">Economy Shipping</p>
+                                <p className="text-sm text-gray-500">5-7 days</p>
+                              </div>
+                            </div>
+                            <p className="font-semibold text-green-700">₹50</p>
+                          </div>
+                        </RadioGroup>
+                      </div>
+                    ) : (
+                      <div className="mt-2">
+                        <p className="text-sm text-gray-600">Enter your 6-digit pincode to check delivery options</p>
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
                 
-                <div className="space-y-4">
-                  <h3 className="font-medium text-lg">Payment Method</h3>
-                  <RadioGroup
-                    value={paymentMethod}
-                    onValueChange={setPaymentMethod}
-                    className="space-y-3"
-                  >
-                    <div className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50 transition-colors">
-                      <RadioGroupItem value="cod" id="cod" />
-                      <Label htmlFor="cod" className="flex items-center gap-2 cursor-pointer">
-                        <div className="bg-amber-100 p-2 rounded-full">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-600">
-                            <rect width="20" height="16" x="2" y="4" rx="2" />
-                            <circle cx="12" cy="12" r="4" />
-                            <path d="M12 8v8" />
-                            <path d="M8 12h8" />
-                          </svg>
-                        </div>
+                {/* Payment Method */}
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-100">
+                  <h3 className="text-lg font-medium mb-4 text-blue-800 flex items-center">
+                    <CreditCardIcon className="h-5 w-5 mr-2 text-blue-700" />
+                    Payment Method
+                  </h3>
+                  
+                  <RadioGroup value={paymentMethod} onValueChange={setPaymentMethod} className="space-y-3">
+                    <div 
+                      onClick={() => setPaymentMethod('cod')}
+                      className={`flex items-center justify-between p-3 rounded-md cursor-pointer transition-all ${paymentMethod === 'cod' ? 'bg-blue-100 border-blue-500 border' : 'bg-white border'}`}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <RadioGroupItem value="cod" id="cod" />
                         <div>
-                          <span className="font-medium">Cash on Delivery</span>
-                          <p className="text-xs text-muted-foreground">Pay when your order arrives</p>
+                          <p className="font-medium">Cash on Delivery</p>
+                          <p className="text-sm text-gray-500">Pay when you receive your items</p>
                         </div>
-                      </Label>
+                      </div>
+                      <DollarSign className="h-5 w-5 text-blue-700" />
                     </div>
                     
-                    <div className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50 transition-colors">
-                      <RadioGroupItem value="razorpay" id="razorpay" />
-                      <Label htmlFor="razorpay" className="flex items-center gap-2 cursor-pointer">
-                        <div className="bg-blue-100 p-2 rounded-full">
-                          <CreditCard className="h-5 w-5 text-blue-600" />
-                        </div>
+                    <div 
+                      onClick={() => setPaymentMethod('online')}
+                      className={`flex items-center justify-between p-3 rounded-md cursor-pointer transition-all ${paymentMethod === 'online' ? 'bg-blue-100 border-blue-500 border' : 'bg-white border'}`}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <RadioGroupItem value="online" id="online" />
                         <div>
-                          <span className="font-medium">Pay Online</span>
-                          <p className="text-xs text-muted-foreground">Credit/Debit Cards, Net Banking, Wallets</p>
+                          <p className="font-medium">Online Payment</p>
+                          <p className="text-sm text-gray-500">Pay securely with credit/debit card</p>
                         </div>
-                      </Label>
-                    </div>
-                    
-                    <div className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50 transition-colors">
-                      <RadioGroupItem value="upi_direct" id="upi_direct" />
-                      <Label htmlFor="upi_direct" className="flex items-center gap-2 cursor-pointer">
-                        <div className="bg-green-100 p-2 rounded-full">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-600">
-                            <path d="m8 7 4-4 4 4" />
-                            <path d="M12 3v10" />
-                            <path d="M8 17a4 4 0 1 0 8 0" />
-                          </svg>
-                        </div>
-                        <div>
-                          <span className="font-medium">UPI Payment</span>
-                          <p className="text-xs text-muted-foreground">PhonePe, Google Pay, Paytm & more</p>
-                        </div>
-                      </Label>
+                      </div>
+                      <div className="flex items-center">
+                        {!isRazorpayReady && <Loader2 className="animate-spin h-4 w-4 mr-2" />}
+                        <CreditCardIcon className="h-5 w-5 text-blue-700" />
+                      </div>
                     </div>
                   </RadioGroup>
-                  
-                  {paymentMethod === 'upi_direct' && (
-                    <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                      <h4 className="text-sm font-medium mb-2">Select UPI App</h4>
-                      <div className="grid grid-cols-3 gap-2">
-                        <Button 
-                          variant={upiApp === 'phonepe' ? 'default' : 'outline'}
-                          className="flex flex-col items-center justify-center h-20 p-2"
-                          onClick={() => setUpiApp('phonepe')}
-                        >
-                          <img src="/images/phonepe.png" alt="PhonePe" className="h-8 w-8 mb-1" />
-                          <span className="text-xs">PhonePe</span>
-                        </Button>
-                        <Button 
-                          variant={upiApp === 'gpay' ? 'default' : 'outline'}
-                          className="flex flex-col items-center justify-center h-20 p-2"
-                          onClick={() => setUpiApp('gpay')}
-                        >
-                          <img src="/images/gpay.png" alt="Google Pay" className="h-8 w-8 mb-1" />
-                          <span className="text-xs">Google Pay</span>
-                        </Button>
-                        <Button 
-                          variant={upiApp === 'paytm' ? 'default' : 'outline'}
-                          className="flex flex-col items-center justify-center h-20 p-2"
-                          onClick={() => setUpiApp('paytm')}
-                        >
-                          <img src="/images/paytm.png" alt="Paytm" className="h-8 w-8 mb-1" />
-                          <span className="text-xs">Paytm</span>
-                        </Button>
-                      </div>
-                    </div>
-                  )}
                 </div>
                 
                 <div className="pt-4 flex flex-wrap gap-2">
                   <Button 
                     onClick={() => setCheckoutStep(1)} 
-                    variant="outline"
+                    variant="outline" 
                   >
-                    Back
+                    Back to Information
                   </Button>
-                  
-                  {showUpiPayment && currentOrderId ? (
-                    <DirectUpiHandler 
-                      orderId={currentOrderId}
-                      amount={finalTotal}
-                      customerInfo={customerInfo}
-                      onSuccess={() => {
-                        setShowUpiPayment(false);
-                        clearCart();
-                        navigate(`/order-success?id=${currentOrderId}`);
-                      }}
-                      onCancel={() => setShowUpiPayment(false)}
-                    />
-                  ) : (
-                    <Button 
-                      onClick={handlePlaceOrder}
-                      disabled={isProcessing || !customerInfo || shippingCost <= 0}
-                    >
-                      {isProcessing ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Processing...
-                        </>
-                      ) : (
-                        'Place Order'
-                      )}
-                    </Button>
-                  )}
+                  <Button 
+                    onClick={handlePlaceOrder} 
+                    className="bg-green-600 hover:bg-green-700 text-white font-medium flex-grow md:flex-grow-0 px-6 py-6 rounded-lg shadow-lg hover:shadow-xl transition-all transform hover:scale-105"
+                    disabled={isProcessing || !selectedCourier || shippingCost === 0}
+                  >
+                    {isProcessing ? (
+                      <div className="flex items-center justify-center">
+                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                        <span className="text-base">Processing your order...</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center">
+                        {paymentMethod === 'online' ? <CreditCardIcon className="mr-2 h-5 w-5" /> : <ShoppingBag className="mr-2 h-5 w-5" />}
+                        <span className="text-base">{`Place Order${paymentMethod === 'online' ? ' & Pay Now' : ''}`}</span>
+                      </div>
+                    )}
+                  </Button>
                 </div>
               </CardContent>
             </Card>
           )}
         </div>
-        
-        <div>
-          <Card>
-            <CardHeader>
-              <CardTitle>Order Summary</CardTitle>
+
+        {/* Order Summary */}
+        <div className="lg:col-span-1">
+          <Card className="sticky top-24">
+            <CardHeader className="bg-gradient-to-r from-emerald-50 to-green-50 rounded-t-lg border-b border-green-100">
+              <CardTitle className="text-xl text-green-800 flex items-center">
+                <ShoppingBag className="h-5 w-5 mr-2 text-green-700" />
+                Order Summary
+              </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {items.length > 0 ? (
-                  items.map((item) => (
-                    <div key={item.id} className="flex justify-between items-center py-2">
-                      <div className="flex items-center gap-3">
-                        {item.image_url && (
+            <CardContent className="space-y-4 p-5">
+              {/* Cart items */}
+              {items.length > 0 ? (
+                <>
+                  <div className="space-y-4">
+                    {items.map((item) => (
+                      <div key={item.id} className="flex space-x-4 p-3 bg-white rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-all">
+                        <div className="w-20 h-20 rounded-md overflow-hidden">
                           <img 
                             src={item.image_url} 
                             alt={item.name} 
-                            className="h-16 w-16 object-cover rounded-md border border-gray-200"
+                            className="w-full h-full object-cover"
                           />
-                        )}
-                        <div>
-                          <p className="font-medium">{item.name}</p>
-                          <p className="text-sm text-muted-foreground">
-                            ₹{item.price} x {item.quantity}
-                          </p>
-                          {item.variant && (
-                            <p className="text-xs text-muted-foreground">
-                              Variant: {item.variant}
-                            </p>
-                          )}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex justify-between">
+                            <h4 className="font-medium text-gray-800">{item.name}</h4>
+                            <span className="font-medium text-green-700">₹{item.price}</span>
+                          </div>
+                          <p className="text-sm text-gray-500 mt-1 line-clamp-1">Natural, organic ingredients</p>
+                          <div className="flex items-center justify-between mt-3">
+                            <div className="flex items-center space-x-1 bg-gray-50 rounded-full p-1">
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-8 w-8 rounded-full hover:bg-gray-200" 
+                                onClick={() => handleQuantityChange(item.id, -1)}
+                              >
+                                <Minus className="h-4 w-4" />
+                              </Button>
+                              <span className="w-8 text-center font-medium">{item.quantity}</span>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-8 w-8 rounded-full hover:bg-gray-200" 
+                                onClick={() => handleQuantityChange(item.id, 1)}
+                              >
+                                <Plus className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            <div className="flex space-x-3 items-center">
+                              <span className="text-sm font-semibold text-green-700">₹{item.price * item.quantity}</span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-full"
+                                onClick={() => removeItem(item.id)}
+                              >
+                                <Trash className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center">
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className="h-8 w-8 rounded-full"
-                            onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
-                            disabled={item.quantity <= 1}
-                          >
-                            <Minus className="h-3 w-3" />
-                          </Button>
-                          <span className="w-8 text-center">{item.quantity}</span>
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className="h-8 w-8 rounded-full"
-                            onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
-                          >
-                            <Plus className="h-3 w-3" />
-                          </Button>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => removeItem(item.id)}
+                    ))}
+                  </div>
+
+                  {/* Coupon Entry */}
+                  <div className="mt-6 mb-2 bg-white p-4 rounded-lg border border-gray-100 shadow-sm">
+                    <h4 className="font-medium text-gray-800 mb-2 flex items-center">
+                      <Tag className="h-4 w-4 mr-2 text-green-700" />
+                      Apply Coupon
+                    </h4>
+                    <div className="flex space-x-2">
+                      <Input
+                        placeholder="Enter coupon code"
+                        value={couponCode}
+                        onChange={(e) => setCouponCode(e.target.value)}
+                        disabled={!!appliedCoupon || isCouponLoading}
+                        className="flex-grow focus:ring-green-500 focus:border-green-500"
+                      />
+                      {appliedCoupon ? (
+                        <Button 
+                          onClick={handleRemoveCoupon}
+                          variant="outline"
+                          size="sm"
+                          className="whitespace-nowrap"
                         >
-                          <Trash className="h-4 w-4" />
+                          <Trash className="mr-1 h-4 w-4" />
+                          Remove
                         </Button>
-                      </div>
+                      ) : (
+                        <Button 
+                          onClick={handleApplyCoupon}
+                          disabled={!couponCode.trim() || isCouponLoading}
+                          variant="outline"
+                          size="sm"
+                          className="whitespace-nowrap bg-green-50 hover:bg-green-100 text-green-700 hover:text-green-800 border-green-200"
+                        >
+                          {isCouponLoading ? (
+                            <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                          ) : (
+                            <Tag className="mr-1 h-4 w-4" />
+                          )}
+                          Apply
+                        </Button>
+                      )}
                     </div>
-                  ))
-                ) : (
-                  <p>No items in cart</p>
-                )}
-                
-                <Separator />
-                
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Input
-                      placeholder="Coupon Code"
-                      value={couponCode}
-                      onChange={(e) => setCouponCode(e.target.value)}
-                      className="flex-1"
-                    />
-                    {isCouponLoading || cartAppliedCoupon ? (
-                      <div>
-                        {cartAppliedCoupon ? (
-                          <Button
-                            onClick={handleRemoveCoupon}
-                            disabled={isCouponLoading}
-                          >
-                            Remove
-                          </Button>
-                        ) : (
-                          <Button disabled>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Applying...
-                          </Button>
-                        )}
+                  </div>
+
+                  {/* Order Details */}
+                  <div className="space-y-3 bg-white p-4 rounded-lg border border-gray-100 shadow-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Subtotal</span>
+                      <span className="font-medium">₹{subtotal}</span>
+                    </div>
+                    
+                    {appliedCoupon && (
+                      <div className="flex justify-between text-green-600">
+                        <span>Discount ({appliedCoupon.discount_percent}%)</span>
+                        <span>-₹{discountAmount.toFixed(2)}</span>
                       </div>
-                    ) : (
-                      <Button
-                        onClick={handleApplyCoupon}
-                        disabled={isCouponLoading || !couponCode}
-                      >
-                        Apply
-                      </Button>
                     )}
-                  </div>
-                  {isCouponLoading && <p className="text-sm">Checking coupon...</p>}
-                </div>
-                
-                <div className="flex justify-between">
-                  <p>Subtotal</p>
-                  <p className="font-medium">₹{totalPrice.toFixed(2)}</p>
-                </div>
-                
-                {cartAppliedCoupon && (
-                  <div className="flex justify-between text-green-600">
-                    <p>Discount ({cartAppliedCoupon.discount_percent}%)</p>
-                    <p className="font-medium">-₹{discountAmount.toFixed(2)}</p>
-                  </div>
-                )}
-                
-                <div className="flex justify-between">
-                  <p>Shipping</p>
-                  <p className="font-medium">
-                    {shippingCost > 0 ? `₹${shippingCost.toFixed(2)}` : 'Calculating...'}
-                  </p>
-                </div>
-                
-                <Separator />
-                
-                <div className="flex justify-between">
-                  <p className="font-medium">Total</p>
-                  <p className="font-medium">₹{(finalTotal).toFixed(2)}</p>
-                </div>
-                
-                {customerInfo && (
-                  <>
-                    <Separator />
-                    <div className="space-y-1">
-                      <p className="font-medium">Shipping to:</p>
-                      <p>{customerInfo.name}</p>
-                      <p>{customerInfo.address}</p>
-                      <p>{customerInfo.city}, {customerInfo.state} {customerInfo.pincode}</p>
-                      <p>{customerInfo.email}</p>
-                      <p>{customerInfo.phone}</p>
+                    
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Shipping</span>
+                      <span className="font-medium">
+                        {shippingCost > 0 ? `₹${shippingCost}` : 'Calculate above'}
+                      </span>
                     </div>
-                  </>
-                )}
-              </div>
+                    
+                    <Separator />
+                    
+                    <div className="flex justify-between text-lg font-bold">
+                      <span>Total</span>
+                      <span className="text-green-700">₹{finalTotal.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  
+                  {/* Customer info display */}
+                  {customerInfo && (
+                    <div className="space-y-2 bg-white p-4 rounded-lg border border-gray-100 shadow-sm">
+                      <h4 className="font-semibold flex items-center text-gray-800">
+                        <MapPin className="h-4 w-4 mr-2 text-green-700" />
+                        Shipping Address
+                      </h4>
+                      <div className="space-y-1 text-sm">
+                        <p className="font-medium">{customerInfo.name}</p>
+                        <p>{customerInfo.address}</p>
+                        <p>{customerInfo.city}, {customerInfo.state} {customerInfo.pincode}</p>
+                        <p>{customerInfo.email}</p>
+                        <p>{customerInfo.phone}</p>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="py-8 text-center text-gray-500 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                  <ShoppingCart className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                  <p>Your cart is empty</p>
+                  <Button 
+                    variant="outline" 
+                    className="mt-4" 
+                    onClick={() => navigate('/products')}
+                  >
+                    Browse Products
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

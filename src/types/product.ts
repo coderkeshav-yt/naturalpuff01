@@ -15,6 +15,9 @@ export interface Product {
   variants?: ProductVariant[];
   discount_percent?: number;
   rating?: number;
+  slug?: string; // SEO-friendly URL slug
+  recommended_product_ids?: number[]; // IDs of recommended products
+  recommended_products?: Product[]; // Recommended products (populated client-side)
 }
 
 export interface DatabaseProduct {
@@ -28,6 +31,8 @@ export interface DatabaseProduct {
   details: string | null;
   created_at: string;
   updated_at: string;
+  slug: string | null;
+  recommended_product_ids: string | null; // Stored as JSON string in the database
 }
 
 export interface ShiprocketOrder {
@@ -92,6 +97,7 @@ export interface Coupon {
   discount_percent: number;
   is_active: boolean;
   expires_at: string | null;
+  min_order_value?: number | null;
   created_at?: string;
   created_by?: string | null;
 }

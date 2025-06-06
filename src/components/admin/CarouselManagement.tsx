@@ -91,7 +91,7 @@ const CarouselManagement: React.FC = () => {
     try {
       setLoading(true);
       const { data, error } = await supabase
-        .from('carousel')
+        .from('carousel' as any)
         .select('*')
         .order('display_order', { ascending: true });
 
@@ -153,7 +153,7 @@ const CarouselManagement: React.FC = () => {
     try {
       setIsSubmitting(true);
       const { error } = await supabase
-        .from('carousel')
+        .from('carousel' as any)
         .delete()
         .eq('id', id);
 
@@ -215,7 +215,7 @@ const CarouselManagement: React.FC = () => {
       if (editingItem) {
         // Update existing item
         const { error } = await supabase
-          .from('carousel')
+          .from('carousel' as any)
           .update(itemToSave as any)
           .eq('id', editingItem.id);
 
@@ -228,7 +228,7 @@ const CarouselManagement: React.FC = () => {
       } else {
         // Create new item
         const { error } = await supabase
-          .from('carousel')
+          .from('carousel' as any)
           .insert(itemToSave as any);
 
         if (error) throw error;

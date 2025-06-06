@@ -59,7 +59,7 @@ const CouponManagement = () => {
         if (edgeFunctionError) {
           console.log('Edge function failed:', edgeFunctionError);
           // Try direct SQL through RPC (not direct table access)
-          const { error: rpcError } = await supabase.rpc('fix_coupon_permissions_direct');
+          const { error: rpcError } = await supabase.rpc('configure_coupon_rls_policies');
           
           if (rpcError) {
             console.error('All permission fix methods failed:', rpcError);
@@ -139,6 +139,7 @@ const CouponManagement = () => {
         code: couponData.code,
         discount_percent: couponData.discount_percent,
         is_active: couponData.is_active !== undefined ? couponData.is_active : true,
+        min_order_value: couponData.min_order_value || null,
         expires_at: couponData.expires_at || null,
         created_by: couponData.created_by || null
       };
@@ -146,14 +147,16 @@ const CouponManagement = () => {
       // If we're editing an existing coupon
       if (editingCoupon?.id) {
         // Update existing coupon
+        // Remove updated_at from the update object to avoid schema cache errors
         const { error } = await supabase
           .from('coupons')
           .update({
             code: couponData.code,
             discount_percent: couponData.discount_percent,
             is_active: couponData.is_active,
-            expires_at: couponData.expires_at,
-            updated_at: new Date().toISOString()
+            min_order_value: couponData.min_order_value,
+            expires_at: couponData.expires_at
+            // updated_at is handled automatically by Supabase
           })
           .eq('id', editingCoupon.id);
 
@@ -170,8 +173,9 @@ const CouponManagement = () => {
                   code: couponData.code,
                   discount_percent: couponData.discount_percent,
                   is_active: couponData.is_active,
-                  expires_at: couponData.expires_at,
-                  updated_at: new Date().toISOString()
+                  min_order_value: couponData.min_order_value,
+                  expires_at: couponData.expires_at
+                  // updated_at is handled automatically by Supabase
                 })
                 .eq('id', editingCoupon.id);
                 

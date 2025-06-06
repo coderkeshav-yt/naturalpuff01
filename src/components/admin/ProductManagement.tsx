@@ -196,7 +196,11 @@ const ProductManagement = () => {
           ...JSON.parse(processedProduct.details || '{}'),
           image_urls: processedProduct.image_urls || [processedProduct.image_url]
         }),
-        nutritional_info: processedProduct.nutritional_info || ''
+        nutritional_info: processedProduct.nutritional_info || '',
+        // Store recommended product IDs as a JSON string
+        recommended_product_ids: processedProduct.recommended_product_ids ? 
+          JSON.stringify(processedProduct.recommended_product_ids) : 
+          null
       };
       
       console.log('Saving product with image URLs in details:', dbProduct.details);

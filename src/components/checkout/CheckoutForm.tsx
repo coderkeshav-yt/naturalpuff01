@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
-import { Loader2 } from 'lucide-react';
+import { Loader2, MapPin } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { CustomerInfo } from '@/types/product';
@@ -35,6 +35,7 @@ const CheckoutForm = ({ onFormSubmit, isSubmitting, initialData }: CheckoutFormP
   const { user } = useAuth();
   const { toast } = useToast();
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
   
   // Initialize the form with initialData if provided
   const form = useForm<CheckoutFormData>({
@@ -95,6 +96,129 @@ const CheckoutForm = ({ onFormSubmit, isSubmitting, initialData }: CheckoutFormP
     
     loadUserProfile();
   }, [user]);
+
+  // Function to detect user's location using browser's Geolocation API
+  const detectLocation = () => {
+    if (!navigator.geolocation) {
+      toast({
+        title: 'Error',
+        description: 'Geolocation is not supported by your browser',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsDetectingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const { latitude, longitude } = position.coords;
+          
+          // Use OpenStreetMap's Nominatim API for reverse geocoding
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&addressdetails=1`,
+            { headers: { 'Accept-Language': 'en' } }
+          );
+          
+          if (!response.ok) {
+            throw new Error('Failed to fetch address information');
+          }
+          
+          const data = await response.json();
+          console.log('Nominatim API response:', data); // Debug log
+          
+          // Get both the formatted address and address components
+          const formattedAddress = data.display_name || '';
+          const address = data.address || {};
+          
+          // Extract address components
+          const streetNumber = address.house_number || '';
+          const street = address.road || '';
+          const suburb = address.suburb || '';
+          const neighbourhood = address.neighbourhood || '';
+          const district = address.district || '';
+          const city = address.city || address.town || address.village || '';
+          const state = address.state || '';
+          const postcode = address.postcode || '';
+          
+          // Construct shipping address with maximum detail
+          let shippingAddress = '';
+          
+          // Try to build a detailed address from components
+          if (streetNumber || street) {
+            const streetPart = [streetNumber, street].filter(Boolean).join(' ');
+            shippingAddress = streetPart;
+            
+            // Add neighborhood/suburb if available
+            const areaPart = [neighbourhood, suburb, district]
+              .filter(Boolean)
+              .filter((value, index, self) => self.indexOf(value) === index) // Remove duplicates
+              .join(', ');
+              
+            if (areaPart) {
+              shippingAddress += ', ' + areaPart;
+            }
+          } else {
+            // If no street information, use the first part of the formatted address
+            const addressParts = formattedAddress.split(',');
+            shippingAddress = addressParts.slice(0, Math.min(2, addressParts.length)).join(',');
+          }
+          
+          console.log('Constructed shipping address:', shippingAddress); // Debug log
+          
+          // Ensure we have something in the shipping address
+          if (!shippingAddress.trim()) {
+            shippingAddress = formattedAddress.split(',').slice(0, 2).join(',');
+          }
+          
+          // Update form fields with detailed information
+          form.setValue('address', shippingAddress);
+          form.setValue('city', city);
+          form.setValue('state', state);
+          form.setValue('pincode', postcode);
+          
+          // Force the form to update and validate
+          form.trigger(['address', 'city', 'state', 'pincode']);
+          
+          toast({
+            title: 'Location Detected',
+            description: 'Your address has been automatically filled',
+          });
+        } catch (error) {
+          console.error('Error fetching address:', error);
+          toast({
+            title: 'Error',
+            description: 'Failed to get your address details',
+            variant: 'destructive',
+          });
+        } finally {
+          setIsDetectingLocation(false);
+        }
+      },
+      (error) => {
+        setIsDetectingLocation(false);
+        let errorMessage = 'Failed to detect your location';
+        
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            errorMessage = 'Location permission denied. Please enable location access.';
+            break;
+          case error.POSITION_UNAVAILABLE:
+            errorMessage = 'Location information is unavailable.';
+            break;
+          case error.TIMEOUT:
+            errorMessage = 'Location request timed out.';
+            break;
+        }
+        
+        toast({
+          title: 'Error',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+      }
+    );
+  };
 
   const onSubmit = (data: CheckoutFormData) => {
     const customerInfo: CustomerInfo = {
@@ -184,19 +308,42 @@ const CheckoutForm = ({ onFormSubmit, isSubmitting, initialData }: CheckoutFormP
           />
         </div>
         
-        <FormField
-          control={form.control}
-          name="address"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Shipping Address</FormLabel>
-              <FormControl>
-                <Input placeholder="Enter your full address" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <div className="relative">
+          <FormField
+            control={form.control}
+            name="address"
+            render={({ field }) => (
+              <FormItem>
+                <div className="flex justify-between items-center">
+                  <FormLabel>Shipping Address</FormLabel>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="flex items-center text-xs h-7 px-2 py-1 bg-gold-500 hover:bg-gold-600 text-black"
+                    onClick={detectLocation}
+                    disabled={isDetectingLocation}
+                  >
+                    {isDetectingLocation ? (
+                      <>
+                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                        Detecting...
+                      </>
+                    ) : (
+                      <>
+                        <MapPin className="mr-1 h-3 w-3" />
+                        Detect Location
+                      </>
+                    )}
+                  </Button>
+                </div>
+                <FormControl>
+                  <Input placeholder="Enter your full address" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <FormField

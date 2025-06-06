@@ -10,7 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useCart } from '@/contexts/CartContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { motion } from 'framer-motion';
@@ -38,7 +38,7 @@ import {
 } from "@/components/ui/drawer";
 import { Badge } from "@/components/ui/badge";
 import { useProductStatus } from '@/hooks/use-product-status';
-import { RefreshDataButton } from '@/components/admin/RefreshDataButton';
+// RefreshDataButton removed as requested
 import { ProductImageCarousel } from '@/components/ui/product-image-carousel';
 import LazyImage from '@/components/ui/LazyImage';
 
@@ -60,6 +60,7 @@ interface Product {
   discount_percent?: number;
   rating?: number;
   category?: string;
+  slug?: string; // SEO-friendly URL slug
 }
 
 interface ProductFilterOptions {
@@ -194,11 +195,31 @@ const Products = () => {
   };
 
   const openProductDetails = (product: Product) => {
-    setSelectedProduct(product);
-    setCurrentImageIndex(0); // Reset image index when opening a new product
-    if (product.variants && product.variants.length > 0) {
-      setSelectedVariant(product.variants[0].size);
+    // Instead of opening a modal dialog, navigate to the product detail page
+    // Use slug if available, otherwise use product ID
+    let slug = '';
+    
+    try {
+      // Try to extract slug from details
+      if (product.details) {
+        const details = JSON.parse(product.details);
+        if (details.slug) {
+          slug = details.slug;
+        }
+      }
+    } catch (e) {
+      console.error('Error parsing product details:', e);
     }
+    
+    // If no slug found, generate one from the name or use the ID
+    if (!slug) {
+      slug = product.name
+        ? product.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+        : product.id.toString();
+    }
+    
+    // Navigate to the product detail page
+    navigate(`/product/${slug}`);
   };
 
   const closeProductDetails = () => {
@@ -481,7 +502,7 @@ const Products = () => {
                 Filters
               </Button>
               
-              <RefreshDataButton onRefreshComplete={fetchProducts} />
+              {/* Refresh Products button removed as requested */}
             </div>
           </div>
           
@@ -554,7 +575,30 @@ const Products = () => {
                   transition={{ duration: 0.5, delay: index * 0.1 }}
                   className="bg-white rounded-lg overflow-hidden shadow-md hover:shadow-lg transition-shadow"
                 >
-                  <div className="h-64 overflow-hidden relative group">
+                  {/* Generate slug for product detail link */}
+                  
+                  <Link 
+                    to={`/product/${(() => {
+                      // First check if the product has a slug column (from our migration)
+                      if (product.slug && typeof product.slug === 'string' && product.slug.trim() !== '') {
+                        return product.slug;
+                      }
+                      
+                      // Fallback: Generate a slug from the name
+                      const nameSlug = product.name
+                        ? product.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+                        : '';
+                        
+                      // If we have a name slug, use it with the ID for uniqueness
+                      if (nameSlug) {
+                        return `${nameSlug}-${product.id}`;
+                      }
+                      
+                      // Last resort: just use the ID
+                      return product.id.toString();
+                    })()}`}
+                    className="h-64 overflow-hidden relative group block"
+                  >
                     {/* Product image carousel */}
                     <ProductImageCarousel 
                       key={`${product.id}-${Date.now()}`}
@@ -658,7 +702,7 @@ const Products = () => {
                         {product.discount_percent}% OFF
                       </div>
                     )}
-                  </div>
+                  </Link>
                   <div className="p-6">
                     <div className="flex justify-between items-start mb-2">
                       <h3 className="text-xl font-bold font-playfair">{product.name}</h3>
@@ -1096,21 +1140,6 @@ const Products = () => {
         </div>
       </section>
 
-      <section className="section-padding bg-cream-100">
-        <div className="container-custom">
-          <div className="max-w-3xl mx-auto text-center">
-            <motion.h2 
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6 }}
-              className="text-3xl font-bold mb-8 text-center font-playfair"
-            >
-              Customer Favorites
-            </motion.h2>
-          </div>
-        </div>
-      </section>
 
       <section className="section-padding bg-brand-600 text-white">
         <div className="container-custom">
@@ -1144,9 +1173,11 @@ const Products = () => {
               We offer special pricing for bulk orders and retail partnerships. 
               Get in touch with our team to discuss how we can work together.
             </p>
-            <Button className="bg-gold-500 hover:bg-gold-600 text-brand-800 px-8 py-6 text-lg">
-              Contact Sales Team
-            </Button>
+            <Link to="/sales-team">
+              <Button className="bg-gold-500 hover:bg-gold-600 text-brand-800 px-8 py-6 text-lg">
+                Contact Sales Team
+              </Button>
+            </Link>
           </div>
         </div>
       </section>

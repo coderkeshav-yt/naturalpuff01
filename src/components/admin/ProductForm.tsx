@@ -1,14 +1,16 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { ImageIcon, Loader2, Plus, Trash } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { useToast } from '@/hooks/use-toast';
 import { Product, ProductVariant } from '@/types/product';
+import { supabase } from '@/integrations/supabase/client';
 
 // Generate a unique ID for uploads
 const generateUniqueId = () => {
@@ -40,6 +42,60 @@ const ProductForm: React.FC<ProductFormProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const [newCategory, setNewCategory] = useState<string>('');
   const [newImageUrl, setNewImageUrl] = useState<string>('');
+  const [availableProducts, setAvailableProducts] = useState<Product[]>([]);
+  const [recommendedProductIds, setRecommendedProductIds] = useState<number[]>([]);
+  
+  // Fetch available products for recommendations
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('products')
+          .select('id, name, image_url')
+          .order('name');
+        
+        if (error) {
+          console.error('Error fetching products:', error);
+          return;
+        }
+        
+        if (data) {
+          // Filter out the current product if it exists
+          const filteredProducts = product?.id 
+            ? data.filter(p => p.id !== product.id)
+            : data;
+          
+          // Cast to Product[] as we only need id, name, and image_url for the dropdown
+          setAvailableProducts(filteredProducts as unknown as Product[]);
+        }
+      } catch (err) {
+        console.error('Exception fetching products:', err);
+      }
+    };
+    
+    fetchProducts();
+  }, [product?.id]);
+  
+  // Initialize recommended product IDs from product
+  useEffect(() => {
+    if (product?.recommended_product_ids) {
+      if (typeof product.recommended_product_ids === 'string') {
+        try {
+          const ids = JSON.parse(product.recommended_product_ids);
+          // Ensure all IDs are numbers
+          setRecommendedProductIds(Array.isArray(ids) ? ids.map(id => Number(id)) : []);
+        } catch (e) {
+          console.error('Error parsing recommended product IDs:', e);
+          setRecommendedProductIds([]);
+        }
+      } else if (Array.isArray(product.recommended_product_ids)) {
+        // Ensure all IDs are numbers
+        setRecommendedProductIds(product.recommended_product_ids.map(id => Number(id)));
+      }
+    } else {
+      setRecommendedProductIds([]);
+    }
+  }, [product?.recommended_product_ids]);
   
   // Initialize image URLs from product details if available
   const [imageUrls, setImageUrls] = useState<string[]>(() => {
@@ -67,33 +123,35 @@ const ProductForm: React.FC<ProductFormProps> = ({
     { size: "100g", price: product?.price ? Math.round(product.price * 1.8) : 0 }
   ]);
 
-  const handleProductChange = (field: keyof Product, value: string | number | boolean | string[]) => {
+  const handleProductChange = (field: keyof Product, value: string | number | boolean | string[] | number[] | any) => {
     setActiveProduct(prev => {
       if (!prev) return prev;
       
       const updatedProduct = { ...prev };
       
       // Handle different field types
-      if (field === 'price' && (typeof value === 'string' || typeof value === 'number')) {
-        const numValue = typeof value === 'string' ? parseFloat(value) : value;
-        // Also update the variant prices based on the main price
-        updateVariantPrices(numValue);
-        updatedProduct.price = numValue;
-      } else if (field === 'stock' && (typeof value === 'string' || typeof value === 'number')) {
-        const numValue = typeof value === 'string' ? parseInt(value, 10) : value;
-        updatedProduct.stock = numValue;
-      } else if (field === 'name' && typeof value === 'string') {
+      if (field === 'name' && typeof value === 'string') {
         updatedProduct.name = value;
       } else if (field === 'description' && typeof value === 'string') {
         updatedProduct.description = value;
+      } else if (field === 'price' && !isNaN(Number(value))) {
+        updatedProduct.price = Number(value);
+      } else if (field === 'stock' && !isNaN(Number(value))) {
+        updatedProduct.stock = Number(value);
       } else if (field === 'image_url' && typeof value === 'string') {
         updatedProduct.image_url = value;
       } else if (field === 'category' && typeof value === 'string') {
         updatedProduct.category = value;
+      } else if (field === 'nutritional_info' && typeof value === 'string') {
+        updatedProduct.nutritional_info = value;
+      } else if (field === 'recommended_product_ids' && Array.isArray(value)) {
+        // Ensure value is properly typed as number[] for recommended_product_ids
+        updatedProduct.recommended_product_ids = value.map(id => Number(id));
+      } else if (field === 'image_urls' && Array.isArray(value)) {
+        // Handle image_urls as string array
+        updatedProduct.image_urls = value as string[];
       } else if (field === 'details' && typeof value === 'string') {
         updatedProduct.details = value;
-      } else if (field === 'image_urls' && Array.isArray(value)) {
-        (updatedProduct as any).image_urls = value;
       }
       
       return updatedProduct;
@@ -115,7 +173,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
         const numValue = typeof value === 'string' ? parseInt(value, 10) : value;
         newVariants[index] = { ...newVariants[index], [field]: numValue };
       } else {
-        newVariants[index] = { ...newVariants[index], [field]: value };
+        newVariants[index] = { ...newVariants[index], [field]: value as string };
       }
       return newVariants;
     });
@@ -240,7 +298,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
     // Also update the details field to store image URLs
     try {
       // Parse existing details
-      let detailsObj = {};
+      let detailsObj: Record<string, any> = {};
       if (activeProduct?.details) {
         detailsObj = typeof activeProduct.details === 'string' 
           ? JSON.parse(activeProduct.details) 
@@ -278,7 +336,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
     // Also update the details field to store image URLs
     try {
       // Parse existing details
-      let detailsObj = {};
+      let detailsObj: Record<string, any> = {};
       if (activeProduct?.details) {
         detailsObj = typeof activeProduct.details === 'string' 
           ? JSON.parse(activeProduct.details) 
@@ -328,30 +386,45 @@ const ProductForm: React.FC<ProductFormProps> = ({
   };
 
   const handleAddCategory = () => {
-    if (!newCategory.trim()) {
-      toast({ 
-        title: "Error", 
-        description: "Please enter a category name" 
-      });
-      return;
-    }
-
-    // Don't add duplicate categories
+    if (!newCategory.trim()) return;
+    
+    // Check if the category already exists
     if (categories.includes(newCategory.trim())) {
-      toast({ 
-        title: "Error", 
-        description: "This category already exists" 
+      toast({
+        title: "Category already exists",
+        description: `The category '${newCategory}' already exists.`,
+        variant: "destructive"
       });
       return;
     }
-
-    // Set this new category as the selected category
+    
+    // Update the product's category
     handleProductChange('category', newCategory.trim());
+    
+    // Clear the input
     setNewCategory('');
-
-    toast({ 
-      title: "Success", 
-      description: "Category added and selected" 
+    
+    toast({
+      title: "Category added",
+      description: `The category '${newCategory}' has been added.`,
+    });
+  };
+  
+  const handleRecommendedProductChange = (productId: number, checked: boolean) => {
+    setRecommendedProductIds(prev => {
+      let newIds;
+      if (checked) {
+        // Add the ID if it's not already in the array
+        newIds = [...prev, productId];
+      } else {
+        // Remove the ID if it's in the array
+        newIds = prev.filter(id => id !== productId);
+      }
+      
+      // Update the product state
+      handleProductChange('recommended_product_ids', newIds);
+      
+      return newIds;
     });
   };
 
@@ -394,13 +467,23 @@ const ProductForm: React.FC<ProductFormProps> = ({
       };
       
       // Create the final product object
-      const updatedProduct = {
+      const updatedProduct: Product = {
         ...activeProduct,
         details: JSON.stringify(updatedDetails),
-        image_urls: imageUrls
+        image_urls: imageUrls,
+        // For database storage, we save as JSON string, but keep the array in the Product object
+        // This is a workaround for the TypeScript error
+        recommended_product_ids: recommendedProductIds
       };
       
-      await onSave(updatedProduct);
+      // Create a database-ready version with the recommended_product_ids as a JSON string
+      const dbProduct = {
+        ...updatedProduct,
+        recommended_product_ids: JSON.stringify(recommendedProductIds)
+      };
+      
+      // @ts-ignore - We know this is the correct format for the database
+      await onSave(dbProduct);
     } catch (error: any) {
       toast({
         title: "Error!",
@@ -438,6 +521,17 @@ const ProductForm: React.FC<ProductFormProps> = ({
           disabled={isSubmitting}
         />
         {formErrors.description && <p className="text-red-500 text-sm">{formErrors.description}</p>}
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="nutritional_info">Nutrition</Label>
+        <Textarea
+          id="nutritional_info"
+          value={activeProduct?.nutritional_info || ''}
+          onChange={(e) => handleProductChange('nutritional_info', e.target.value)}
+          disabled={isSubmitting}
+          placeholder="Enter nutritional information for this product"
+        />
+        {formErrors.nutritional_info && <p className="text-red-500 text-sm">{formErrors.nutritional_info}</p>}
       </div>
       <div className="grid gap-2">
         <Label htmlFor="price">Base Price</Label>
@@ -654,6 +748,43 @@ const ProductForm: React.FC<ProductFormProps> = ({
               Add URL
             </Button>
           </div>
+        </div>
+        
+        {/* Recommended Products */}
+        <div className="space-y-2 mt-6">
+          <Label>Recommended Products</Label>
+          <div className="border rounded-md p-4 max-h-60 overflow-y-auto">
+            {availableProducts.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Loading products...</p>
+            ) : (
+              <div className="space-y-2">
+                {availableProducts.map((prod) => (
+                  <div key={prod.id} className="flex items-center space-x-2">
+                    <Checkbox 
+                      id={`product-${prod.id}`} 
+                      checked={recommendedProductIds.includes(prod.id)} 
+                      onCheckedChange={(checked) => handleRecommendedProductChange(prod.id, checked === true)}
+                      disabled={isSubmitting}
+                    />
+                    <Label 
+                      htmlFor={`product-${prod.id}`}
+                      className="flex items-center space-x-2 cursor-pointer text-sm"
+                    >
+                      {prod.image_url && (
+                        <img 
+                          src={prod.image_url} 
+                          alt={prod.name} 
+                          className="w-8 h-8 object-cover rounded-sm"
+                        />
+                      )}
+                      <span>{prod.name}</span>
+                    </Label>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">Select products to recommend alongside this product.</p>
         </div>
         
         {/* File Upload */}

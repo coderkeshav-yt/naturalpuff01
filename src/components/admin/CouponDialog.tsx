@@ -23,6 +23,7 @@ const CouponDialog = ({ open, onOpenChange, onSave, isSubmitting, editingCoupon 
   const [code, setCode] = useState(editingCoupon?.code || '');
   const [discountPercent, setDiscountPercent] = useState<number>(editingCoupon?.discount_percent || 10);
   const [isActive, setIsActive] = useState(editingCoupon?.is_active !== false);
+  const [minOrderValue, setMinOrderValue] = useState<number | null>(editingCoupon?.min_order_value || null);
   const [expiryDate, setExpiryDate] = useState(
     editingCoupon?.expires_at 
       ? new Date(editingCoupon.expires_at).toISOString().split('T')[0]
@@ -36,6 +37,7 @@ const CouponDialog = ({ open, onOpenChange, onSave, isSubmitting, editingCoupon 
       setCode(editingCoupon.code || '');
       setDiscountPercent(editingCoupon.discount_percent || 10);
       setIsActive(editingCoupon.is_active !== false);
+      setMinOrderValue(editingCoupon.min_order_value || null);
       setExpiryDate(
         editingCoupon.expires_at 
           ? new Date(editingCoupon.expires_at).toISOString().split('T')[0]
@@ -46,6 +48,7 @@ const CouponDialog = ({ open, onOpenChange, onSave, isSubmitting, editingCoupon 
       setCode('');
       setDiscountPercent(10);
       setIsActive(true);
+      setMinOrderValue(null);
       setExpiryDate('');
     }
     setError(null);
@@ -63,6 +66,11 @@ const CouponDialog = ({ open, onOpenChange, onSave, isSubmitting, editingCoupon 
       return;
     }
     
+    if (minOrderValue !== null && minOrderValue < 0) {
+      setError('Minimum order value cannot be negative');
+      return;
+    }
+    
     setError(null);
 
     // Prepare coupon data
@@ -70,6 +78,7 @@ const CouponDialog = ({ open, onOpenChange, onSave, isSubmitting, editingCoupon 
       code: code.trim().toUpperCase(),
       discount_percent: discountPercent,
       is_active: isActive,
+      min_order_value: minOrderValue,
       created_by: user?.id || null,
     };
 
@@ -155,6 +164,26 @@ const CouponDialog = ({ open, onOpenChange, onSave, isSubmitting, editingCoupon 
               />
               <span className="text-lg">%</span>
             </div>
+          </div>
+          
+          <div className="space-y-1">
+            <Label htmlFor="minOrderValue">Minimum Order Value (Optional)</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="minOrderValue"
+                type="number"
+                min="0"
+                placeholder="0"
+                value={minOrderValue === null ? '' : minOrderValue}
+                onChange={(e) => {
+                  const value = e.target.value === '' ? null : parseInt(e.target.value);
+                  setMinOrderValue(value);
+                }}
+                disabled={isSubmitting}
+              />
+              <span className="text-lg">₹</span>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Coupon will only apply when cart total meets or exceeds this amount</p>
           </div>
           
           <div className="space-y-1">
