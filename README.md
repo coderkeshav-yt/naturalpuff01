@@ -119,7 +119,7 @@ Main dependencies used in this project:
 
 ## 👨‍💻 Developer Details
 
-- **Name:** Keshav Kuamar Singh
+- **Name:** Keshav Kumar Singh
 - **Email:** hello.keshav.webdev@gmail.com
 
 
